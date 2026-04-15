@@ -1,3 +1,8 @@
+> **Status: work in progress.** This pipeline is under active development and
+>  contains bugs. It is not yet set up to run on the university's SLURM
+> cluster. verything here assumes a local environment. If you're using this
+> package, expect rough edges and interfaces that may still change.
+
 # Pipeline Architecture
 
 A visual overview of what each file does and how they work together.
