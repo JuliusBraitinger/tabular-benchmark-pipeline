@@ -19,7 +19,6 @@ env/
 # IDE
 .vscode/
 .idea/
-critic/
 
 # OS
 .DS_Store
