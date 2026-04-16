@@ -2,8 +2,6 @@
 #  It uses the AHP weights as a starting point and then adjusts
 #  them based on the variability and conflict of the criteria.
 
-#TODO implement the CRITIC method 
-
 import numpy as np
 from dataclasses import dataclass
 from sklearn.preprocessing import MinMaxScaler
