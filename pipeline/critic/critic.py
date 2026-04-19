@@ -36,10 +36,8 @@ def run_critic(score_matrix):
     # Step 4: Pearson correlation matrix (tells us which rules are redundant with which)
     correlation_matrix = normalized_scores.corr()
 
-    # Step 5: conflict per criterion calculation 
-    conflicts = pd.Series(dtype=float)
-    for rule in rules:
-        conflicts[rule] = sum(1 - correlation_matrix.loc[rule])
+    # Step 5: conflict per criterion = how different is each rule from the others
+    conflicts = (1 - correlation_matrix).sum()
 
     # Step 6: information content =  contrast intensity * conflict
     informativeness = standard_deviation * conflicts

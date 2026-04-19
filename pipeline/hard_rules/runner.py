@@ -51,9 +51,11 @@ def run_metadata_checks( #different rules need different data inputs -> runner n
     )
     results: list[RuleResult] = []
     for _rule_name, check_fn in _METADATA_CHECKS: #actual check of the rules
-        result = check_fn(**kwargs) #**kwargs is the dictionary with the metada. It can pick the relevant information for each rule and ignore the rest. 
+        result = check_fn(**kwargs) #**kwargs is the dictionary with the metada. It can pick the relevant information for each rule and ignore the rest.
         if result is not None:
             results.append(result)
+            if not result.passed:
+                break  # no point checking remaining rules if one already failed
     return results
 
 
@@ -70,6 +72,8 @@ def run_data_checks(
         result = check_fn(**kwargs)
         if result is not None:
             results.append(result)
+            if not result.passed:
+                break  # fail fast, skip remaining checks
     return results
 
 
