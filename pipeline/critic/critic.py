@@ -2,7 +2,6 @@
 #  It uses the AHP weights as a starting point and then adjusts
 #  them based on the variability and conflict of the criteria.
 
-import numpy as np
 from dataclasses import dataclass
 from sklearn.preprocessing import MinMaxScaler
 import pandas as pd
@@ -32,7 +31,7 @@ def run_critic(score_matrix):
     normalized_scores = pd.DataFrame(scaler.fit_transform(score_matrix[rules]), columns=rules, index=score_matrix.index)
 
     # Step 3: contrast intensity (std dev per column, how much the rule discriminates between datasets)
-    standad_deviation = normalized_scores.std()
+    standard_deviation = normalized_scores.std()
 
     # Step 4: Pearson correlation matrix (tells us which rules are redundant with which)
     correlation_matrix = normalized_scores.corr()
@@ -43,7 +42,7 @@ def run_critic(score_matrix):
         conflicts[rule] = sum(1 - correlation_matrix.loc[rule])
 
     # Step 6: information content =  contrast intensity * conflict
-    informativeness = standad_deviation * conflicts
+    informativeness = standard_deviation * conflicts
 
     # Step 7: Normalize informativeness to get sum of 1 for weights 
     total_info = informativeness.sum()
@@ -72,7 +71,7 @@ def run_critic(score_matrix):
         final = ahp_points if verdict == "AGREE" else crit_points
         results.append(CRITICResults(
             rule=rule,
-            stdv=standad_deviation[rule],
+            stdv=standard_deviation[rule],
             ahp_score=ahp_points,
             critic_score=crit_points,
             critic_weight=critic_weights[rule],
