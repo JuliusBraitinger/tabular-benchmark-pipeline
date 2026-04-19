@@ -1,3 +1,5 @@
+#TODO parallelize fetch_all. For each loader one thread -> no need to wait for the slowest source to finish (GEO)
+
 """Dataset registry.
 
 Central dispatcher for all data sources (OpenML, TCGA, GEO). Instead of

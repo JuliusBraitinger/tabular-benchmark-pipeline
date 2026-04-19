@@ -7,6 +7,9 @@ based on microarray expression profiling. Returns the raw expression data
 This is a POC: focuses on tumor vs normal classification studies, which are
 common in GEO and useful for biomedical ML benchmarks.
 """
+
+#TODO implement parallelization for the GEO requeuts for faster candidate listing -> bottleneck
+#right now code is waiting all the time for answer of GEO request while doing nothing
 import logging
 import os
 import re
