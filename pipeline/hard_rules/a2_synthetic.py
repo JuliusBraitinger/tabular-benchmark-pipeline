@@ -15,3 +15,8 @@ def check_metadata(
 ) -> RuleResult:
     # MOCKUP: always passes for now. real check coming later.
     return RuleResult(rule="A2", passed=True)
+
+def check_data( #mockup
+        **_kwargs: object,
+) -> RuleResult:
+    return RuleResult(rule="A2", passed=True)
