@@ -47,9 +47,9 @@ def check_data(X, y, task_type="classification", **_kwargs):
 
     # subsampling
     if len(X) > 5000:
-         sample_idx = X.sample(n=5000, random_state=42).index
-            X = X.loc[sample_idx]
-            y = y.loc[sample_idx]
+        sample_idx = X.sample(n=5000, random_state=42).index
+        X = X.loc[sample_idx]
+        y = y.loc[sample_idx]
 
     # replace NaNs with median? -> from paper
     X = X.fillna(X.mean())
