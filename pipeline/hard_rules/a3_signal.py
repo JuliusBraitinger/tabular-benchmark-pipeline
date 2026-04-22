@@ -54,14 +54,13 @@ def check_data(X, y, task_type="classification", **_kwargs):
     # replace NaNs with median? -> from paper
     X = X.fillna(X.mean())
 
-    # trains model on real labels, then shuffles labels N_PERMUTATIONS times. 
-    real_score, perm_scores, p_value = permutation_test_score(
-        model, X, y,
-        scoring=scoring,
-        cv=CV_FOLDS,
-        n_permutations=N_PERMUTATIONS,
-        random_state=42,
+    # run the permutation test - trains model on real labels, then shuffles labels N_PERMUTATIONS times
+    results = permutation_test_score(
+        model, X, y, scoring=scoring, cv=CV_FOLDS,
+        n_permutations=N_PERMUTATIONS, random_state=42,
     )
+    real_score = results[0]  # how well the model did on real labels
+    p_value = results[2]     # fraction of shuffled runs that beat the real score
 
     passed = p_value < P_VALUE_THRESHOLD
     return RuleResult(
