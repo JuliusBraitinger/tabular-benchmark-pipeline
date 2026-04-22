@@ -28,8 +28,8 @@ def check_metadata(source="", name="", metadata=None, **_kwargs): #works with re
 
      # check tags espicially for openml
     tags = (metadata or {}).get("tags", [])
-    for tag in tag:
-        if SYNTHETIC_KEYWORDS.search(str(tags)):
+    for tag in tags:
+        if SYNTHETIC_KEYWORDS.search(str(tag)):
             return RuleResult(rule="A2", passed=False, reason=f"tag looks synthetic: '{tag}'")
 
    
