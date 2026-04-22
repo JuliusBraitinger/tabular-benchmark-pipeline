@@ -45,8 +45,16 @@ def check_data(X, y, task_type="classification", **_kwargs):
         )
         scoring = "r2"
 
-    # TODO: subsample large datasets to ~5000 rows before running this, otherwise it's very slow
+    # subsampling
+    if len(X) > 5000:
+         sample_idx = X.sample(n=5000, random_state=42).index
+            X = X.loc[sample_idx]
+            y = y.loc[sample_idx]
 
+    # replace NaNs with median? -> from paper
+    X = X.fillna(X.mean())
+
+    # trains model on real labels, then shuffles labels N_PERMUTATIONS times. 
     real_score, perm_scores, p_value = permutation_test_score(
         model, X, y,
         scoring=scoring,
