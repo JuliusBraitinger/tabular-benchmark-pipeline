@@ -25,10 +25,6 @@ MAX_DEPTH = 5
 CV_FOLDS = 3
 
 
-def check_metadata(**_kwargs: object) -> None:
-    # can't check signal from metadata alone, defer to data check
-    return None
-
 
 def check_data(X, y, task_type="classification", **_kwargs):
     """Permutation test: if p < 0.05, the data has real signal."""
