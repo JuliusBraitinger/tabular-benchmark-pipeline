@@ -16,6 +16,8 @@ SYNTHETIC_KEYWORDS = re.compile(
 # these sources are real data by definition
 REAL_SOURCES = {"tcga", "geo"}
 
+def check_data():
+    return RuleResult(rule="A2", passed=True)
 
 def check_metadata(source="", name="", metadata=None, **_kwargs): #works with regex of the metadata. -> only picks out of the kwargs source and name and whats in the metadata chekc
     # tcga and geo are always real
