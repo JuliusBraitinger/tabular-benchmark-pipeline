@@ -442,35 +442,30 @@ def _get_file_ids(project_id, data_type, workflow_type, max_files=600):
 def _download_single_file(file_id, data_type):
     """Download one GDC file. TCGA stores one file per patient so we need many of these.
 
-    Returns a pandas Series: feature_name -> value.
+    Returns a pandas Series: gene_name -> value.
+
     """
-    skip_pfx = SKIP_LINES_PREFIX.get(data_type, ())
     try:
         resp = requests.get(f"{GDC_BASE_URL}/data/{file_id}", timeout=60)
         resp.raise_for_status()
         lines = resp.text.strip().split("\n")
 
-        # build a dict of feature_name -> value for this patient
         data = {}
         for line in lines:
-            # skip header lines
-            is_header = False
-            for p in skip_pfx:
-                if line.startswith(p):
-                    is_header = True
-                    break
-            if is_header:
+            # skip comment lines and header rows
+            if line.startswith("#") or line.startswith("gene_id"):
+                continue
+            # skip the summary rows (N_unmapped, N_multimapping, etc.)
+            if line.startswith("N_"):
                 continue
 
-            # parse "feature\tvalue"
             parts = line.split("\t")
-            if len(parts) >= 2:
-                feature_name = parts[0]
+            if len(parts) >= 4:
+                gene_name = parts[1]  # gene_name column
                 try:
-                    value = float(parts[1])
-                    data[feature_name] = value
+                    value = float(parts[3])  # unstranded counts
+                    data[gene_name] = value
                 except ValueError:
-                    # value isn't a number -> skip
                     continue
 
         if data:
@@ -481,7 +476,7 @@ def _download_single_file(file_id, data_type):
         return None
 
 
-def _build_feature_matrix(file_records, data_type, max_files=200):
+def _build_feature_matrix(file_records, data_type, max_files=20):  # TODO: set back to 200 after testing
     """Download per-sample files and stack them into a samples x features matrix."""
     # each case id -> its Series of features
     rows = {}
@@ -506,7 +501,6 @@ def _download_clinical_target(project_id, task_type):
     """Download clinical data and pick a target variable.
 
     First try sample_type (e.g. Primary Tumor vs Solid Tissue Normal).
-    If that's missing, fall back to vital_status (Alive/Dead).
     """
     payload = {
         "filters": {
