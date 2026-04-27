@@ -18,7 +18,7 @@ _METADATA_CHECKS = [
 
 # Data-level rules (expensive, run only if metadata passes)
 _DATA_CHECKS = [
-    ("A1", a1_task_type.check_data), #only gets checked if we dont have a task type from the metadata. Otherwise it gets skipped
+    ("A1", a1_task_type.check_data),
     ("A2", a2_synthetic.check_data),
     ("A3", a3_signal.check_data),
     ("A5", a5_dimensions.check_data),

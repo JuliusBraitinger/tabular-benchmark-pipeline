@@ -1,4 +1,5 @@
 """TCGA data loader - scrapes GDC metadata and downloads gene expression matrices."""
+# TODO:  save full clinical data not just target(vital_status, tumor_stage, age, etc.) 
 import json
 import logging
 import time
@@ -70,8 +71,6 @@ def _gdc_post(endpoint, payload):
     resp.raise_for_status()
     return resp.json()
 
-
-# --- helpers that build up the candidate list ---
 
 
 def _fetch_projects():
@@ -362,9 +361,9 @@ def fetch(candidate):
 
     # X and y must line up on the same sample IDs
     shared = X.index.intersection(y.index)
-    # if len(shared) < MIN_CASES // 2:
-    #     logger.warning("%s: only %d shared samples", project_id, len(shared))
-    #     return None
+    if len(shared) < MIN_CASES // 2:
+        logger.warning("%s: only %d shared samples", project_id, len(shared))
+        return None
 
     X = X.loc[shared]
     y = y.loc[shared]
@@ -476,7 +475,7 @@ def _download_single_file(file_id, data_type):
         return None
 
 
-def _build_feature_matrix(file_records, data_type, max_files=20):  # temp: 20 for quick test
+def _build_feature_matrix(file_records, data_type, max_files=200):
     """Download per-sample files and stack them into a samples x features matrix."""
     # each case id -> its Series of features
     rows = {}
@@ -527,6 +526,8 @@ def _download_clinical_target(project_id, task_type):
             case_id = case.get("submitter_id", "")
             if not case_id:
                 continue
+
+            # keep ONE target per patient which is in this case tumor state
 
             # preferred: sample_type from the first sample
             samples = case.get("samples", [])
