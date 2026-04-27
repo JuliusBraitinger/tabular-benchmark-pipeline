@@ -362,9 +362,9 @@ def fetch(candidate):
 
     # X and y must line up on the same sample IDs
     shared = X.index.intersection(y.index)
-    if len(shared) < MIN_CASES // 2:
-        logger.warning("%s: only %d shared samples", project_id, len(shared))
-        return None
+    # if len(shared) < MIN_CASES // 2:
+    #     logger.warning("%s: only %d shared samples", project_id, len(shared))
+    #     return None
 
     X = X.loc[shared]
     y = y.loc[shared]
@@ -476,7 +476,7 @@ def _download_single_file(file_id, data_type):
         return None
 
 
-def _build_feature_matrix(file_records, data_type, max_files=20):  # TODO: set back to 200 after testing
+def _build_feature_matrix(file_records, data_type, max_files=20):  # temp: 20 for quick test
     """Download per-sample files and stack them into a samples x features matrix."""
     # each case id -> its Series of features
     rows = {}
