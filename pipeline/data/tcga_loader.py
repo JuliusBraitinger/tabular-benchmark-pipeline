@@ -359,11 +359,9 @@ def fetch(candidate):
         logger.warning("No clinical target for %s", project_id)
         return None
 
-    # X and y must line up on the same sample IDs
+    # align X and y on the same sample IDs
     shared = X.index.intersection(y.index)
-    if len(shared) < MIN_CASES // 2:
-        logger.warning("%s: only %d shared samples", project_id, len(shared))
-        return None
+    logger.info("%s: found %d patients that have both expression data and clinical labels", project_id, len(shared))
 
     X = X.loc[shared]
     y = y.loc[shared]
@@ -475,7 +473,7 @@ def _download_single_file(file_id, data_type):
         return None
 
 
-def _build_feature_matrix(file_records, data_type, max_files=200):
+def _build_feature_matrix(file_records, data_type, max_files=600):
     """Download per-sample files and stack them into a samples x features matrix."""
     # each case id -> its Series of features
     rows = {}
