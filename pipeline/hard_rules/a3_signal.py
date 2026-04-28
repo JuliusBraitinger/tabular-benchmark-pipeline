@@ -50,6 +50,12 @@ def check_data(X, y, task_type="classification", **_kwargs):
     # replace NaNs with median? -> from paper
     X = X.fillna(X.mean())
 
+    # if way more features than samples, keep only the top 1000 most variable ones
+    # buug? oothweise si+oome tcga datasets wont get past this rule  TEMPORARY 
+    if X.shape[1] > 1000:
+        top_features = X.var().nlargest(1000).index
+        X = X[top_features]
+
     # run the permutation test - trains model on real labels, then shuffles labels N_PERMUTATIONS times
     results = permutation_test_score(
         model, X, y, scoring=scoring, cv=CV_FOLDS,
