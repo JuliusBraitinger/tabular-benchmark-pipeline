@@ -451,7 +451,7 @@ def _get_file_ids(project_id, data_type, workflow_type, max_files=600):
         for hit in data["data"]["hits"]:
             file_id = hit["file_id"]
             case_id = ""
-             sample_type = ""
+            sample_type = ""
 
             # each file belongs to a case which has samples
             for case in hit.get("cases", []):
