@@ -34,7 +34,7 @@ def check_data(X, y, task_type="classification", **_kwargs):
         model = RandomForestClassifier(
             n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=42
         )
-        scoring = "roc_auc_ovr"
+        scoring = "balanced_accuracy"
     else:
         model = RandomForestRegressor(
             n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=42
