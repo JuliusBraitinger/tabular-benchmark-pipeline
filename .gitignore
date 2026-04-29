@@ -33,6 +33,7 @@ data/
 /tmp/
 *.cache
 *.env
+*.png
 
 # Data artifacts
 *.csv
