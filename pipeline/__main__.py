@@ -30,7 +30,7 @@ def main() -> None:
 
     # Phase 2: download the actual data + run data-level hard rules
     log.info("=== Phase 2: fetching datasets ===")
-    datasets = registry.fetch_all(candidates, max_datasets=36)
+    datasets = registry.fetch_all(candidates, max_datasets=5)
     log.info("Got %d datasets", len(datasets))
 
     # Phase 3: save datasets to disk for reusing later
@@ -39,7 +39,10 @@ def main() -> None:
     for ds in datasets:
         ds_dir = OUTPUT_DIR / ds.id
         ds_dir.mkdir(exist_ok=True)
-        ds.X.to_parquet(ds_dir / "X.parquet")
+        X = ds.X
+        if hasattr(X, "sparse"):
+            X = X.sparse.to_dense()
+        X.to_parquet(ds_dir / "X.parquet")
         ds.y.to_frame("target").to_parquet(ds_dir / "y.parquet")
         with open(ds_dir / "meta.pkl", "wb") as f:
             pickle.dump({
