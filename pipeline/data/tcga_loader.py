@@ -363,25 +363,31 @@ def fetch(candidate):
             logger.warning("No files found for %s %s", project_id, data_type)
             return None
 
-        #build the feature matrix (samples x features)
-        X = _build_feature_matrix(file_ids, data_type)
+        # build the feature matrix + get sample_type for each file
+        result = _build_feature_matrix(file_ids, data_type)
+        X = result[0]
+        sample_types = result[1]
+
         if X is None or X.empty:
             logger.warning("Failed to build matrix for %s %s", project_id, data_type)
             return None
 
-        # download clinical data and pick a target
-        y = _download_clinical_target(project_id, candidate.task_type)
-        if y is None or y.empty:
-            logger.warning("No clinical target for %s", project_id)
-            return None
+        # use the sample_type from the actual expression file as the label
+        # before this was using clinical data which didnt match the files
+        y = pd.Series(sample_types, name="target")
 
-        # only keep patients where we have both expression + clinical data
+        # only keep rows that have both expression data and a label
         shared = X.index.intersection(y.index)
-        logger.info("%s: %d patients with both expression and clinical data", project_id, len(shared))
+        logger.info("%s: %d samples with expression data and labels", project_id, len(shared))
         X = X.loc[shared]
         y = y.loc[shared]
 
-        # save so we dont have to download again
+        # drop samples without a known sample type
+        has_label = y != ""
+        X = X.loc[has_label]
+        y = y.loc[has_label]
+
+        # save so next run doesnt have to download again
         folder.mkdir(parents=True, exist_ok=True)
         X.to_parquet(x_file)
         y.to_frame("target").to_parquet(y_file)
@@ -422,7 +428,7 @@ def fetch(candidate):
 
 
 def _get_file_ids(project_id, data_type, workflow_type, max_files=600):
-    """Get file_id + case_id for every open-access file of this type."""
+    """Get file_id + case_id + sample_type for every open-access file."""
     payload = {
         "filters": {
             "op": "and",
@@ -433,7 +439,8 @@ def _get_file_ids(project_id, data_type, workflow_type, max_files=600):
                 {"op": "=", "content": {"field": "access", "value": "open"}},
             ],
         },
-        "fields": "file_id,cases.case_id,cases.submitter_id",
+        # also grab sample_type so we know what tissue this file is from
+        "fields": "file_id,cases.case_id,cases.submitter_id,cases.samples.sample_type",
         "size": max_files,
         "format": "json",
     }
@@ -441,15 +448,25 @@ def _get_file_ids(project_id, data_type, workflow_type, max_files=600):
         data = _gdc_post("files", payload)
         results = []
 
-        # each hit is one file, paired with a case id for later X/y alignment
         for hit in data["data"]["hits"]:
             file_id = hit["file_id"]
             case_id = ""
-            # take the first case attached to this file
+             sample_type = ""
+
+            # each file belongs to a case which has samples
             for case in hit.get("cases", []):
                 case_id = case.get("submitter_id", case.get("case_id", ""))
+                # get the sample type from the first sample
+                for sample in case.get("samples", []):
+                    sample_type = sample.get("sample_type", "")
+                    break
                 break
-            results.append({"file_id": file_id, "case_id": case_id})
+
+            results.append({
+                "file_id": file_id,
+                "case_id": case_id,
+                "sample_type": sample_type,
+            })
 
         return results
     except Exception as e:
@@ -495,13 +512,19 @@ def _download_single_file(file_id, data_type):
 
 
 def _build_feature_matrix(file_records, data_type, max_files=600):
-    """Download per-sample files and stack them into a samples x features matrix."""
-    # each case id -> its Series of features
+    """Download per-sample files and stack them into a samples x features matrix.
+
+    Also returns a dict of case_id -> sample_type so its clear what tissue
+    each row in the matrix actually came from.
+    """
     rows = {}
+    sample_types = {}  # case_id -> sample_type (from the file that actually got kept)
+
     for i, rec in enumerate(file_records[:max_files]):
         series = _download_single_file(rec["file_id"], data_type)
         if series is not None:
             rows[rec["case_id"]] = series
+            sample_types[rec["case_id"]] = rec.get("sample_type", "")
 
         # log progress every 50 files so we know it's alive
         if (i + 1) % 50 == 0:
@@ -509,10 +532,10 @@ def _build_feature_matrix(file_records, data_type, max_files=600):
         time.sleep(0.1)
 
     if not rows:
-        return None
+        return None, {}
 
-    # dict of Series -> DataFrame (features x samples), then transpose to (samples x features)
-    return pd.DataFrame(rows).T
+    X = pd.DataFrame(rows).T
+    return X, sample_types
 
 
 def _download_clinical_target(project_id, task_type):

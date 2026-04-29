@@ -29,11 +29,10 @@ def check_metadata(source="", name="", metadata=None, **_kwargs): #works with re
     if SYNTHETIC_KEYWORDS.search(name):
         return RuleResult(rule="A2", passed=False, reason=f"name looks synthetic: '{name}'")
 
-     # check tags espicially for openml
+    # check tags espicially for openml
     tags = (metadata or {}).get("tags", [])
     for tag in tags:
         if SYNTHETIC_KEYWORDS.search(str(tag)):
             return RuleResult(rule="A2", passed=False, reason=f"tag looks synthetic: '{tag}'")
 
-   
     return RuleResult(rule="A2", passed=True)
