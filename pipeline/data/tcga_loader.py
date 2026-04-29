@@ -1,8 +1,9 @@
 """TCGA data loader - scrapes GDC metadata and downloads gene expression matrices."""
-# TODO:  save full clinical data not just target(vital_status, tumor_stage, age, etc.) 
+# TODO:  save full clinical data not just target(vital_status, tumor_stage, age, etc.)
 import json
 import logging
 import time
+from pathlib import Path
 
 import pandas as pd
 import requests
@@ -46,6 +47,9 @@ SKIP_LINES_PREFIX = {
 
 # cache the feature count for each workflow so we don't count the same thing twice
 _p_cache = {}
+
+# where to save raw X/y so we can skip the download next time
+CACHE_DIR = Path("data/cache/tcga")
 
 
 # --- GDC API wrappers ---
@@ -339,32 +343,49 @@ def fetch(candidate):
     data_type = candidate.metadata["data_type"]
     workflow_type = candidate.metadata["workflow_type"]
 
-    logger.info("Downloading TCGA %s %s...", project_id, data_type)
+    # downloading takes forever -> save the raw data for now 
+    # after the first download. next time we just load from disk for testint the rules 
+    folder = CACHE_DIR / f"{project_id}_{data_type.replace(' ', '-')}"
+    x_file = folder / "X_raw.parquet"
+    y_file = folder / "y_raw.parquet"
 
-    # Step 1: list all file ids
-    file_ids = _get_file_ids(project_id, data_type, workflow_type)
-    if not file_ids:
-        logger.warning("No files found for %s %s", project_id, data_type)
-        return None
+    if x_file.exists() and y_file.exists():
+        # already downloaded before, just load it
+        logger.info("found cache for %s, skipping download", project_id)
+        X = pd.read_parquet(x_file)
+        y = pd.read_parquet(y_file).squeeze()
+    else:
+        # no cache yet, download everything
+        logger.info("Downloading TCGA %s %s...", project_id, data_type)
 
-    # Step 2: build the feature matrix (samples x features)
-    X = _build_feature_matrix(file_ids, data_type)
-    if X is None or X.empty:
-        logger.warning("Failed to build matrix for %s %s", project_id, data_type)
-        return None
+        file_ids = _get_file_ids(project_id, data_type, workflow_type)
+        if not file_ids:
+            logger.warning("No files found for %s %s", project_id, data_type)
+            return None
 
-    # Step 3: download clinical data and pick a target
-    y = _download_clinical_target(project_id, candidate.task_type)
-    if y is None or y.empty:
-        logger.warning("No clinical target for %s", project_id)
-        return None
+        #build the feature matrix (samples x features)
+        X = _build_feature_matrix(file_ids, data_type)
+        if X is None or X.empty:
+            logger.warning("Failed to build matrix for %s %s", project_id, data_type)
+            return None
 
-    # align X and y on the same sample IDs
-    shared = X.index.intersection(y.index)
-    logger.info("%s: found %d patients that have both expression data and clinical labels", project_id, len(shared))
+        # download clinical data and pick a target
+        y = _download_clinical_target(project_id, candidate.task_type)
+        if y is None or y.empty:
+            logger.warning("No clinical target for %s", project_id)
+            return None
 
-    X = X.loc[shared]
-    y = y.loc[shared]
+        # only keep patients where we have both expression + clinical data
+        shared = X.index.intersection(y.index)
+        logger.info("%s: %d patients with both expression and clinical data", project_id, len(shared))
+        X = X.loc[shared]
+        y = y.loc[shared]
+
+        # save so we dont have to download again
+        folder.mkdir(parents=True, exist_ok=True)
+        X.to_parquet(x_file)
+        y.to_frame("target").to_parquet(y_file)
+        logger.info("saved raw data to %s", folder)
 
     # Step 4: expensive data-level hard rules
     data_results = hard_rules.run_data_checks(X, y, task_type=candidate.task_type)
