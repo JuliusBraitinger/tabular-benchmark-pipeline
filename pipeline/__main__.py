@@ -23,14 +23,14 @@ def main() -> None:
     # Phase 1: scrape candidates from all sources (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
     candidates = registry.list_candidates(
-        sources=["tcga"],
-        max_per_source=1,
+        sources=["openml"],
+        max_per_source=36,
     )
     log.info("Got %d candidates", len(candidates))
 
     # Phase 2: download the actual data + run data-level hard rules
     log.info("=== Phase 2: fetching datasets ===")
-    datasets = registry.fetch_all(candidates, max_datasets=1)
+    datasets = registry.fetch_all(candidates, max_datasets=36)
     log.info("Got %d datasets", len(datasets))
 
     # Phase 3: save datasets to disk for reusing later

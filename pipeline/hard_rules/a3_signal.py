@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import permutation_test_score
+from sklearn.preprocessing import LabelEncoder
 
 from pipeline.hard_rules.base import RuleResult
 
@@ -30,7 +31,7 @@ def check_data(X, y, task_type="classification", **_kwargs):
     """Permutation test: if p < 0.05, the data has real signal."""
 
     # pick the right model and metric based on task type
-    if task_type == "classification":
+    if "classification" in task_type:
         model = RandomForestClassifier(
             n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=42
         )
@@ -47,8 +48,19 @@ def check_data(X, y, task_type="classification", **_kwargs):
         X = X.loc[sample_idx]
         y = y.loc[sample_idx]
 
+    # some openml datasets come as sparse, convert to normal dense format
+    if hasattr(X, "sparse"):
+        X = X.sparse.to_dense()
+
+    # drop non-numeric columns (some openml datasets have strings mixed in)
+    X = X.select_dtypes(include="number")
+
     # replace NaNs with median? -> from paper
     X = X.fillna(X.mean())
+
+    # sklearn needs numeric labels, some datasets have strings like "tumor"/"normal"
+    if "classification" in task_type:
+        y = LabelEncoder().fit_transform(y)
 
     # if way more features than samples, keep only the top 1000 most variable ones
     # buug? oothweise si+oome tcga datasets wont get past this rule  TEMPORARY 
