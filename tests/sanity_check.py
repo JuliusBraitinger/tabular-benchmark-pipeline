@@ -23,7 +23,7 @@ for folder in folders:
     print(folder.name + ":", X.shape[0], "samples,", X.shape[1], "features,", len(set(y)), "classes")
 
     rf = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42)
-    scores = cross_val_score(rf, X, y, cv=5, scoring="accuracy")
+    scores = cross_val_score(rf, X, y, cv=5, scoring="balanced_accuracy")
     print("  accuracy:", round(scores.mean(), 3), "+/-", round(scores.std(), 3))
 
     rf.fit(X, y)
@@ -33,7 +33,7 @@ for folder in folders:
     ConfusionMatrixDisplay.from_estimator(rf, X, y, ax=ax1, cmap="Blues")
     ax1.set_title("confusion matrix (train)")
 
-    top = np.argsort(rf.feature_importances_)[:15]
+    top = np.argsort(rf.feature_importances_)[-15:]
     ax2.barh(range(15), rf.feature_importances_[top])
     ax2.set_yticks(range(15))
     ax2.set_yticklabels(X.columns[top], fontsize=7)
