@@ -8,6 +8,7 @@ import pickle
 from pathlib import Path
 
 from pipeline.data import registry
+from pipeline import stats
 
 OUTPUT_DIR = Path("data/datasets")
 
@@ -50,6 +51,10 @@ def main() -> None:
                 "task_type": ds.task_type, "metadata": ds.metadata,
             }, f)
         log.info("  Saved %s: X=%s task=%s", ds.id, ds.X.shape, ds.task_type)
+
+    # save the rule stats csv
+    stats.save_csv("rule_stats.csv")
+    log.info("Saved rule_stats.csv")
 
     log.info("Done. %d datasets saved to %s", len(datasets), OUTPUT_DIR)
 
