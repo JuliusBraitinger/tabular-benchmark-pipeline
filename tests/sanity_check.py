@@ -31,7 +31,7 @@ for folder in folders:
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
 
     ConfusionMatrixDisplay.from_estimator(rf, X, y, ax=ax1, cmap="Blues")
-    ax1.set_title("confusion matrix (train)")
+    ax1.set_title("confusion matrix (not meaningfull - no train/test split)")
 
     top = np.argsort(rf.feature_importances_)[-15:]
     ax2.barh(range(15), rf.feature_importances_[top])
