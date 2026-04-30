@@ -394,7 +394,7 @@ def fetch(candidate):
 
     # if A1 figured out a task from the target, use that; otherwise keep the candidate's value
     task_type = hard_rules.inferred_task_type(data_results) or candidate.task_type
-    stats.record(accession, "tcga", candidate, data_results)
+    stats.record(accession, "geo_array", candidate.name, data_results)
 
     logger.info(
         "GEO %s: loaded %d samples x %d features, task=%s",
