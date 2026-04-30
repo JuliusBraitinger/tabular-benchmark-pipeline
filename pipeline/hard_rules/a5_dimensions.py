@@ -11,17 +11,20 @@ def check_metadata(
     **_kwargs: object,
 ) -> RuleResult | None:
     """Check dimensions from metadata. Returns None if dimensions unknown."""
-    if n_samples is None or n_features is None:
-        return None  # defer to data check
-
+    # check whichever dimension we know about
     reasons: list[str] = []
-    if n_samples < MIN_ROWS:
-        reasons.append(f"N={n_samples} < {MIN_ROWS}")
-    if n_features < MIN_FEATURES:
-        reasons.append(f"P={n_features} < {MIN_FEATURES}")
+    if n_samples is not None and n_samples < MIN_ROWS:
+        reasons.append("N=" + str(n_samples) + " < " + str(MIN_ROWS))
+    if n_features is not None and n_features < MIN_FEATURES:
+        reasons.append("P=" + str(n_features) + " < " + str(MIN_FEATURES))
 
     if reasons:
         return RuleResult(rule="A5", passed=False, reason="; ".join(reasons))
+
+    # if both are None toss to data level check
+    if n_samples is None and n_features is None:
+        return None
+
     return RuleResult(rule="A5", passed=True)
 
 

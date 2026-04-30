@@ -43,7 +43,7 @@ if NCBI_API_KEY:
 # We use this loose 50 here just to skip obviously tiny GEO studies before
 # doing the expensive GEOparse download. Studies with 50-999 samples will
 # still be parsed here, and then rejected later by the A5 hard rule.
-MIN_SAMPLES = 50  # GEO studies are typically smaller
+MIN_SAMPLES = 500  # GEO studies are typically smaller
 
 # where we cache GEOparse downloads so we don't re-download the same GSE
 CACHE_DIR = "/tmp/geoparse_cache"

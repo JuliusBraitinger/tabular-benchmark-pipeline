@@ -24,7 +24,7 @@ def main() -> None:
     # Phase 1: scrape candidates from all sources (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
     candidates = registry.list_candidates(
-        sources=["tcga"],
+        sources=["geo_array"],
         max_per_source=1,
     )
     log.info("Got %d candidates", len(candidates))
