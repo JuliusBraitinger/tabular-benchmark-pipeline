@@ -17,6 +17,7 @@ import pandas as pd
 from pipeline.config import ACCEPTED_TASKS, MIN_FEATURES, MIN_ROWS  # imports thresholds from config.py
 from pipeline.data.base import CandidateInfo, Dataset  # imported dataclasses
 from pipeline.hard_rules import runner as hard_rules  # hard rule checks
+from pipeline import stats  # for recording stats about the datasets we process
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,8 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
             name=name,
             metadata={"tags": []},
         )
+
+        stats.record(str(did), "openml", name, results)
 
         # if any hard rule failed, skip this dataset
         failed = hard_rules.failed_rules(results)
@@ -114,6 +117,8 @@ def fetch(candidate: CandidateInfo) -> Dataset | None: #aktuell werden hier auch
     # A3 = does the data have predictive signal (RandomForest cross-val)
     # A5 = do the real dimensions still meet thresholds
     data_results = hard_rules.run_data_checks(X, y, task_type=candidate.task_type)
+    stats.record(str(did), "openml", candidate.name, data_results)
+
     failed = hard_rules.failed_rules(data_results)
     if failed:
         reasons = ", ".join(f"{r.rule}: {r.reason}" for r in failed)
@@ -126,6 +131,8 @@ def fetch(candidate: CandidateInfo) -> Dataset | None: #aktuell werden hier auch
         "OpenML %d: loaded %d samples x %d features, task=%s",
         did, X.shape[0], X.shape[1], task_type,
     )
+
+    
 
     # everything passed, build the final Dataset and return it
     return Dataset(
