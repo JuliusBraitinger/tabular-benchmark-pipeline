@@ -19,6 +19,7 @@ import GEOparse
 import pandas as pd
 import requests
 from Bio import Entrez
+from pipeline import stats
 
 from pipeline.config import (
     ENTREZ_BASE_URL,
@@ -266,6 +267,7 @@ def list_candidates(max_candidates=50):
                     source="geo_array",
                     name=title,
                 )
+                stats.record(accession, "geo_array", title, results)
                 if not hard_rules.all_passed(results):
                     continue
 
@@ -296,6 +298,8 @@ def list_candidates(max_candidates=50):
             time.sleep(REQUEST_DELAY)
 
     logger.info("GEO microarray: %d candidates after metadata filters", len(candidates))
+    
+
     return candidates
 
 

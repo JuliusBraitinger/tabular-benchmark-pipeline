@@ -11,6 +11,7 @@ import requests
 from pipeline.config import GDC_BASE_URL, REQUEST_DELAY
 from pipeline.data.base import CandidateInfo, Dataset
 from pipeline.hard_rules import runner as hard_rules
+from pipeline import stats 
 
 logger = logging.getLogger(__name__)
 
@@ -299,6 +300,8 @@ def list_candidates(max_candidates=100):
                 source="tcga",
                 name=f"{project_id} {cancer_type}",
             )
+            stats.record(project_id, "tcga", cancer_type + " - " + dt, results)
+
             if not hard_rules.all_passed(results):
                 continue
 
@@ -395,6 +398,7 @@ def fetch(candidate):
 
     # Step 4: expensive data-level hard rules
     data_results = hard_rules.run_data_checks(X, y, task_type=candidate.task_type)
+    stats.record(project_id, "tcga", candidate.name, data_results)
     failed = hard_rules.failed_rules(data_results)
     if failed:
         reasons = ", ".join(f"{r.rule}: {r.reason}" for r in failed)
