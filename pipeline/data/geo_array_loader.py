@@ -122,7 +122,7 @@ def _normalize_label(raw_label):
     # if label is empty after cleaning, use "unknown"
     if label == "":
         label = "unknown"
-    return raw_label
+    return label
 
 
 # metadata extraction via GEOparse (the slow part)
