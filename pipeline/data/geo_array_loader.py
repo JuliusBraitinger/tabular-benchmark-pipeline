@@ -30,6 +30,7 @@ from pipeline.config import (
 )
 from pipeline.data.base import CandidateInfo, Dataset
 from pipeline.hard_rules import runner as hard_rules
+from pipeline.hard_rules.base import RuleResult
 
 logger = logging.getLogger(__name__)
 
@@ -250,12 +251,17 @@ def list_candidates(max_candidates=50):
                 # if we couldn't figure out a task type, skip
                 if meta["task_type"] == "unknown":
                     logger.debug("  %s: no tumor/normal contrast, skipping", accession)
+                    fail = RuleResult(rule="pre-filter", passed=False, reason="no tumor/normal contrast")
+                    stats.record(accession, "geo_array", title, fail)
                     continue
 
                 # feature count check (if we have it)
                 n_features = meta["n_features"]
                 if n_features is not None and n_features < MIN_FEATURES:
                     logger.debug("  %s: P=%d < %d, skipping", accession, n_features, MIN_FEATURES)
+                    reason = "P=" + str(n_features) + " < " + str(MIN_FEATURES)
+                    fail = RuleResult(rule="pre-filter", passed=True, reason=reason)
+                    stats.record(accession, "geo_array", title, fail)
                     continue
 
                 # run the central metadata hard rules
