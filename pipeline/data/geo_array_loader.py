@@ -105,6 +105,26 @@ def _esummary_batch(uids):
     return results
 
 
+# helper to clean up sample labels before comparing them
+
+def _normalize_label(raw_label):
+    """takes a raw label string and normalizes it for comparison."""
+    label = raw_label.strip()
+    label = label.lower()
+    label = label.replace(" ", "_")
+    # remove duplicates from label list
+    parts = label.split(",")
+    unique = []
+    for p in parts:
+        if p not in unique:
+            unique.append(p)
+    label = ",".join(unique)
+    # if label is empty after cleaning, use "unknown"
+    if label == "":
+        label = "unknown"
+    return raw_label
+
+
 # metadata extraction via GEOparse (the slow part)
 
 
