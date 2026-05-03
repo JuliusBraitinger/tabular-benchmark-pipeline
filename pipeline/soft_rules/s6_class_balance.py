@@ -14,6 +14,6 @@ def score(dataset):
 
     proportions = counts / counts.sum()
     entropy = -np.sum(proportions * np.log(proportions))
-    balance = entropy / np.log(k + 1)
+    balance = entropy / np.log(k)
 
     return SoftRuleResult(rule="S6", score=balance, details={"k": k, "entropy": entropy})
