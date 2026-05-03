@@ -43,10 +43,13 @@ def main() -> None:
         ds_dir = OUTPUT_DIR / ds.id
         ds_dir.mkdir(exist_ok=True)
         X = ds.X
-        if hasattr(X, "sparse"):
+        if hasattr(X, "sparse"): #convert back to dense 
             X = X.sparse.to_dense()
         X.to_parquet(ds_dir / "X.parquet")
-        ds.y.to_frame("target").to_parquet(ds_dir / "y.parquet")
+        y = ds.y
+        if hasattr(y, "sparse"): #also for y data for some datasets 
+            y = y.sparse.to_dense()
+        y.to_frame("target").to_parquet(ds_dir / "y.parquet")
         with open(ds_dir / "meta.pkl", "wb") as f:
             pickle.dump({
                 "id": ds.id, "source": ds.source, "name": ds.name,
