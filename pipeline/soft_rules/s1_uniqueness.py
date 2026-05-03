@@ -1,13 +1,15 @@
-# S1 Uniqueness 
-#TODO implement
+# S1 Uniqueness (10 points)
+# statistical fingerprint: per-column mean+std+skew+kurtosis
+# reference: pymfe paper (Alcobaca et al., 2020)
 
-from __future__ import annotations
+#TODO implement score()
+import pandas as pd
+from pipeline.soft_rules.base import SoftRuleResult
 
-from pipeline.config import MIN_FEATURES, MIN_ROWS
-from pipeline.hard_rules.base import RuleResult
-
-def check_metadata(**_kwargs):
-    return RuleResult(rule="S1", passed=True)
-
-def check_data(**_kwargs): #not implemented
-    return RuleResult(rule="S1", passed=True)
+def score(dataset):
+    stdv = dataset.std()
+    mean = dataset.mean()
+    skew = dataset.skew()
+    kurt = dataset.kurtosis()
+    fingerprint = pd.concat([mean, stdv, skew, kurt], axis=1)
+    return SoftRuleResult(rule="S1", score=1.0, details={"fingerprint": fingerprint}) #score is placeholder for now
