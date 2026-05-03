@@ -1,9 +1,19 @@
 # S6 Class Balance (5 points)
-# imbalance ratio and entropy of class distribution
+# normalized shannon entropy of class distribution
 
-#TODO implement score()
-
+import numpy as np
 from pipeline.soft_rules.base import SoftRuleResult
 
-def score(dataset, pool=None):
-    return SoftRuleResult(rule="S6", score=1.0, details={})
+def score(dataset):
+    y = dataset.y
+    counts = y.value_counts()
+    k = len(counts)
+
+    if k < 2:
+        return SoftRuleResult(rule="S6", score=0.0, details={"k": k})
+
+    proportions = counts / counts.sum()
+    entropy = -np.sum(proportions * np.log(proportions))
+    balance = entropy / np.log(k + 1)
+
+    return SoftRuleResult(rule="S6", score=balance, details={"k": k, "entropy": entropy})
