@@ -1,10 +1,9 @@
-# S2 IID Assumption 
-#TODO implement
+# S2 IID Assumption (10 points)
+# autocorrelation, runs test, duplicate detection
 
-from pipeline.hard_rules.base import RuleResult
+#TODO implement score()
 
-def check_metadata(**_kwargs):
-    return RuleResult(rule="S1", passed=True)
+from pipeline.soft_rules.base import SoftRuleResult
 
-def check_data(**_kwargs): #not implemented
-    return RuleResult(rule="S1", passed=True)
+def score(dataset, pool=None):
+    return SoftRuleResult(rule="S2", score=1.0, details={})

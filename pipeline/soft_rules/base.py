@@ -42,7 +42,6 @@ class SoftRule(Protocol):
     def score(
         self,
         dataset: Dataset,
-        pool: list[Dataset] | None = None,
     ) -> SoftRuleResult:
         """Score the dataset. Returns continuous score [0.0, 1.0] and diagnostic details."""
         ...

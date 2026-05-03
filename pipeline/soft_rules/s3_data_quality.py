@@ -1,11 +1,9 @@
-# S3 Data Quality 
-#TODO implement
+# S3 Data Quality (15 points)
+# missing fraction, constant features, outlier percentage
 
+#TODO implement score()
 
-from pipeline.hard_rules.base import RuleResult
+from pipeline.soft_rules.base import SoftRuleResult
 
-def check_metadata(**_kwargs):
-    return RuleResult(rule="S1", passed=True)
-
-def check_data(**_kwargs): #not implemented
-    return RuleResult(rule="S1", passed=True)
+def score(dataset, pool=None):
+    return SoftRuleResult(rule="S3", score=1.0, details={})
