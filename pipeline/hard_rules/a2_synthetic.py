@@ -16,7 +16,7 @@ SYNTHETIC_KEYWORDS = re.compile(
 # these sources are real data by definition
 REAL_SOURCES = {"tcga", "geo"}
 
-def check_data(**_kwargs):
+def check_data(**_kwargs): #not implementer
     return RuleResult(rule="A2", passed=True)
 
 
