@@ -3,6 +3,7 @@
 import json
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pandas as pd
@@ -521,19 +522,25 @@ def _build_feature_matrix(file_records, data_type, max_files=600):
     Also returns a dict of case_id -> sample_type so its clear what tissue
     each row in the matrix actually came from.
     """
-    rows = {}
-    sample_types = {}  # case_id -> sample_type (from the file that actually got kept)
+    records = file_records[:max_files]
 
-    for i, rec in enumerate(file_records[:max_files]):
+    # download one file and return the record + result
+    def download_one(rec):
         series = _download_single_file(rec["file_id"], data_type)
+        return rec, series
+
+    # download 10 files at the same time
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        results = list(pool.map(download_one, records))
+
+    logger.info("  downloaded %d files", len(results))
+
+    rows = {}
+    sample_types = {}
+    for rec, series in results:
         if series is not None:
             rows[rec["case_id"]] = series
             sample_types[rec["case_id"]] = rec.get("sample_type", "")
-
-        # log progress every 50 files so we know it's alive
-        if (i + 1) % 50 == 0:
-            logger.info("  downloaded %d/%d files", i + 1, min(len(file_records), max_files))
-        time.sleep(0.1)
 
     if not rows:
         return None, {}
