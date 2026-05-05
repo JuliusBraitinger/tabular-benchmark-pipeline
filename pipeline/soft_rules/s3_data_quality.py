@@ -5,16 +5,6 @@
 
 from pipeline.soft_rules.base import SoftRuleResult
 
-
-# S3 Data Quality (15 points)
-#
-# Composite score over  sub-metrics; each sub-metric is in [0, 1] (1 = clean).
-# Budach et al. (2022), Eq. for Completeness:
-#        c_miss = 1 - (1/p) * sum_j ( missing(c_j) / n )
-
-from pipeline.soft_rules.base import SoftRuleResult
-
-
 def completeness(X): #penalizes dataset with empty columns more than a flat total-cells ratio would
     n_rows, n_cols = X.shape
     if n_rows == 0 or n_cols == 0:
@@ -34,5 +24,10 @@ def completeness(X): #penalizes dataset with empty columns more than a flat tota
     }
 
 
-def score(dataset, pool=None):
-    return SoftRuleResult(rule="S3", score=1.0, details={})
+def score(dataset):
+    completeness_score, completeness_details = completeness(dataset.X)
+    return SoftRuleResult(
+        rule="S3",
+        score=completeness_score,
+        details=completeness_details
+    )   
