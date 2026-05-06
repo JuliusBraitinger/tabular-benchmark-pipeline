@@ -41,6 +41,8 @@ def completeness(X): #penalizes dataset with empty columns more than a flat tota
 
 # reference: Breck, E., Polyzotis, N., Roy, S., Whang, S. E., & Zinkevich, M. (2019).
 # "Data Validation for Machine Learning." SysML 2019. (TFDV "useless feature" check)
+# checking if columns are constant -> not informative + checking for mix types
+
 def non_constant(X):
     n_constant = (X.nunique() <= 1).sum()
     n_quasiconstant =  0 #column where (top-1 value frequency) > 0.95
@@ -83,7 +85,8 @@ def outlier_percentage(X):
     }
 
 # reference: Budach, L. et al. (2022). "The Effects of Data Quality on Machine
-# Learning Performance on Tabular Data." arXiv:2207.14529 (Consistent Representation dim.)
+# Learning Performance on Tabular Data." arXiv:2207.14529 (Consistent Representation dim.) 
+#checking for columns with mixed types/values 
 def consistency(X):
     n_features = X.shape[1]
     n_mixed = 0 #columns with >1 unique type (e.g. int and string)
