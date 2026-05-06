@@ -5,6 +5,9 @@
 # Budach et al. (2022), Eq. for Completeness:
 #        c_miss = 1 - (1/p) * sum_j ( missing(c_j) / n )
 
+from sklearn.decomposition import PCA
+from sklearn.ensemble import IsolationForest
+
 from pipeline.soft_rules.base import SoftRuleResult
 
 def completeness(X): #penalizes dataset with empty columns more than a flat total-cells ratio would
@@ -36,9 +39,35 @@ def non_constant(X):
         "n_quasiconstant": int(n_quasiconstant),
         "n_features": int(p)
     }
+# reference: Liu, F. T., Ting, K. M., & Zhou, Z.-H. (2008).
+# "Isolation Forest." 8th IEEE Int. Conf. on Data Mining (ICDM 2008).
 def outlier_percentage(X):
-    #TODO implement
-    return 1.0, {}
+    n_rows = X.shape[0]
+    if n_rows < 10:
+        return 1.0, {"n_rows": n_rows, "skipped": "too few rows"}
+
+    # IsolationForest needs numeric, fully populated input
+    X_num = X.select_dtypes(include="number")
+    if X_num.shape[1] == 0:
+        return 1.0, {"skipped": "no numeric columns"}
+    X_filled = X_num.fillna(X_num.mean())
+
+    # PCA pre-reduction so IF doesn't choke on 100k+ feature matrices
+    k = min(50, n_rows - 1, X_filled.shape[1])
+    X_reduced = PCA(n_components=k, random_state=42).fit_transform(X_filled)
+
+    forest = IsolationForest(contamination=0.05, n_estimators=100, random_state=42)
+    labels = forest.fit_predict(X_reduced)
+
+    # IsolationForest convention: -1 = outlier, +1 = inlier
+    n_outliers = (labels == 1).sum()
+    score = 1 - n_outliers / n_rows
+
+    return score, {
+        "n_outliers": int(n_outliers),
+        "n_components": int(k),
+        "contamination": 0.05,
+    }
 
 def consistency(X):
     #TODO implement
