@@ -74,9 +74,19 @@ def consistency(X):
     return 1.0, {}
 
 def score(dataset): # here other metrics will be added  s
-    completeness_score, completeness_details = completeness(dataset.X)
+    X = dataset.X
+    c_miss, miss_details = completeness(X)
+    c_const, const_details = non_constant(X)
+    x = consistency(X)
+    final_score = (c_miss + c_const) / 2 #for now average 
+
     return SoftRuleResult(
         rule="S3",
-        score=completeness_score,
-        details=completeness_details
-    )   
+        score=final_score,
+        details={
+            "c_miss": c_miss,
+            "c_const": c_const,
+            **miss_details,
+            **const_details,
+        }
+    )
