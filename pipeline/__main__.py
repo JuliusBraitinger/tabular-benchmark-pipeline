@@ -13,8 +13,8 @@ from pipeline import soft_stats
 from pipeline.soft_rules import s3_data_quality as s3
 from pipeline.soft_rules import s1_uniqueness as s1
 from pipeline.soft_rules import s2_iid as s2
-from pipeline.soft_rules import s4_outliers as s4
-from pipeline.soft_rules import s5_const_features as s5
+from pipeline.soft_rules import s4_leakage as s4
+from pipeline.soft_rules import s5_batch_effects as s5
 from pipeline.soft_rules import s6_class_balance as s6
 
 
