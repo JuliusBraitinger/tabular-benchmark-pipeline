@@ -7,6 +7,7 @@
 
 from sklearn.decomposition import PCA
 from sklearn.ensemble import IsolationForest
+import pandas as pd
 
 from pipeline.soft_rules.base import SoftRuleResult
 
@@ -70,8 +71,16 @@ def outlier_percentage(X):
     }
 
 def consistency(X):
-    #TODO implement
-    return 1.0, {}
+    n_features = X.shape[1]
+    n_mixed = 0 #columns with >1 unique type (e.g. int and string)
+    for col in X.select_dtypes(include="object").columns:
+        nans = X[col].isna().sum()
+        coerced = pd.to_numeric(X[col], errors="coerce")
+        new_Nans = coerced.isna().sum() -nans
+        if new_Nans > 0:
+            n_mixed += 1
+    score = 1 - n_mixed / n_features
+    return score, {"n_mixed": int(n_mixed), "n_features": int(n_features)}
 
 def score(dataset): # here other metrics will be added  s
     X = dataset.X
