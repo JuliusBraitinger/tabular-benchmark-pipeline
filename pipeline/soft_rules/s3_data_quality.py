@@ -61,7 +61,8 @@ def outlier_percentage(X):
     # builds 100 random trees that keep splitting the data on random featurus.
     # weird rows get isolted fast (few splits) -> flagged as outlier.
     # normal row need many splits because theyre surrounded by similar rows.
-    # contamination=0.05 means it flags the 5% most-isolated rows as outliers.
+    # contamination='auto' uses Liu et al.'s default threshold so the flagged fraction
+    # varies per dataset (not pinned to 5%) -> real variance for CRITIC.
     # sklearn convention: -1 = outlier, +1 = normal (same for all anomaly detectors).
     n_rows = X.shape[0]
     # IsolationForest needs numeric input
@@ -73,7 +74,7 @@ def outlier_percentage(X):
     # PCA pre-reduction so IF doesn't choke on 100k+ feature matrices
     k = min(40, n_rows - 1, X_filled.shape[1]) # 40 is educated guess, rows-1 is max for pca,
     X_reduced = PCA(n_components=k, random_state=42).fit_transform(X_filled)
-    forest = IsolationForest(contamination=0.05, n_estimators=100, random_state=42) #unsupervised -> guess
+    forest = IsolationForest(contamination='auto', n_estimators=100, random_state=42) #unsupervised -> guess
     labels = forest.fit_predict(X_reduced)
     n_outliers = (labels == -1).sum()
     score = 1 - n_outliers / n_rows # higher outlier percentage -> lower score
@@ -81,7 +82,7 @@ def outlier_percentage(X):
     return score, {
         "n_outliers": int(n_outliers),
         "n_components": int(k),
-        "contamination": 0.05,
+        "contamination": "auto",
     }
 
 # reference: Budach, L. et al. (2022). "The Effects of Data Quality on Machine
