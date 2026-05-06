@@ -8,8 +8,8 @@ def record (dataset, soft_results):
         "dataset_id": dataset.id,
         "source": dataset.source,
         "name": dataset.name,
-        "n_rows": dataset.n_rows,
-        "n_features": dataset.n_features,
+        "n_rows": dataset.X.shape[0],
+        "n_features": dataset.X.shape[1],
     }
 
     for r in soft_results:
