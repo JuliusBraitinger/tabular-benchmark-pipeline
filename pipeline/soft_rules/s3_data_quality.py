@@ -82,12 +82,13 @@ def consistency(X):
     score = 1 - n_mixed / n_features
     return score, {"n_mixed": int(n_mixed), "n_features": int(n_features)}
 
-def score(dataset): # here other metrics will be added  s
+def score(dataset):
     X = dataset.X
     c_miss, miss_details = completeness(X)
     c_const, const_details = non_constant(X)
-    x = consistency(X)
-    final_score = (c_miss + c_const) / 2 #for now average 
+    c_consist, consist_details = consistency(X)
+    c_out, out_details = outlier_percentage(X)
+    final_score = (c_miss + c_const + c_consist + c_out) / 4 #for now equal weight average
 
     return SoftRuleResult(
         rule="S3",
@@ -95,7 +96,11 @@ def score(dataset): # here other metrics will be added  s
         details={
             "c_miss": c_miss,
             "c_const": c_const,
+            "c_consist": c_consist,
+            "c_out": c_out,
             **miss_details,
             **const_details,
+            **consist_details,
+            **out_details,
         }
     )
