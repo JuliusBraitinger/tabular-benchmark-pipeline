@@ -9,6 +9,16 @@ from pathlib import Path
 
 from pipeline.data import registry
 from pipeline import stats
+from pipeline import soft_stats
+from pipeline.soft_rules import s3_data_quality as s3
+from pipeline.soft_rules import s1_uniqueness as s1
+from pipeline.soft_rules import s2_iid as s2
+from pipeline.soft_rules import s4_outliers as s4
+from pipeline.soft_rules import s5_const_features as s5
+from pipeline.soft_rules import s6_class_balance as s6
+
+
+
 
 OUTPUT_DIR = Path("data/datasets")
 
@@ -63,6 +73,22 @@ def main() -> None:
 
     log.info("Done. %d datasets saved to %s", len(datasets), OUTPUT_DIR)
 
+
+    # Phase 4: run soft rules and collect stats for accepted datasets
+    log.info("=== Phase 4: running soft rules ===")
+    for ds in datasets:
+        results = [
+            s1.uniqueness.score(ds),
+            s2.iid.score(ds),
+            s3.missing_values.score(ds),
+            s4.outliers.score(ds),
+            s5.const_features.score(ds),
+            s6.class_balance.score(ds),
+        ]
+        soft_stats.record(ds, results)
+
+    soft_stats.save_csv("soft_stats.csv")
+    log.info("Saved soft_stats.csv")
 
 if __name__ == "__main__":
     main()
