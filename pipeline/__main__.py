@@ -25,10 +25,10 @@ def main() -> None:
     log.info("=== Phase 1: scraping candidates ===")
     # geo gets searched the most since most studies are too small and get filtered out
     # openml and tcga find candidates more easily
+    tcga_candidates = registry.list_candidates(sources=["tcga"], max_per_source=20)
     geo_candidates = registry.list_candidates(sources=["geo_array"], max_per_source=50)
     openml_candidates = registry.list_candidates(sources=["openml"], max_per_source=20)
-    tcga_candidates = registry.list_candidates(sources=["tcga"], max_per_source=20)
-    candidates = geo_candidates + openml_candidates + tcga_candidates
+    candidates = tcga_candidates + openml_candidates + geo_candidates
     log.info("Got %d candidates", len(candidates))
 
     # Phase 2: download the actual data + run data-level hard rules

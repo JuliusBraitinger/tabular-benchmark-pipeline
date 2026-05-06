@@ -432,7 +432,7 @@ def fetch(candidate):
 # -- download + parsing stuff used inside fetch() --
 
 
-def _get_file_ids(project_id, data_type, workflow_type, max_files=600):
+def _get_file_ids(project_id, data_type, workflow_type, max_files=3000):
     """Get file_id + case_id + sample_type for every open-access file."""
     payload = {
         "filters": {
@@ -479,35 +479,73 @@ def _get_file_ids(project_id, data_type, workflow_type, max_files=600):
         return []
 
 
+def _parse_gene_expression(lines):
+    """STAR/HTSeq counts file. Cols: gene_id, gene_name, gene_type, unstranded, ..."""
+    data = {}
+    for line in lines:
+        if line.startswith("#") or line.startswith("gene_id") or line.startswith("N_"):
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 4:
+            try:
+                data[parts[1]] = float(parts[3])  # gene_name -> unstranded counts
+            except ValueError:
+                continue
+    return data
+
+
+def _parse_methylation(lines):
+    """SeSAMe Methylation Beta file. Cols: Composite Element REF, Beta_value."""
+    data = {}
+    for line in lines:
+        if line.startswith("Composite") or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 2:
+            try:
+                value = float(parts[1])  # NaN beta values appear as "NA" -> ValueError, skip
+                data[parts[0]] = value
+            except ValueError:
+                continue
+    return data
+
+
+def _parse_mirna(lines):
+    """BCGSC miRNA file. Cols: miRNA_ID, read_count, reads_per_million_miRNA_mapped, cross-mapped."""
+    data = {}
+    for line in lines:
+        if line.startswith("miRNA_ID") or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 2:
+            try:
+                data[parts[0]] = float(parts[1])  # read_count
+            except ValueError:
+                continue
+    return data
+
+
+_PARSERS = {
+    "Gene Expression Quantification": _parse_gene_expression,
+    "Methylation Beta Value": _parse_methylation,
+    "miRNA Expression Quantification": _parse_mirna,
+}
+
+
 def _download_single_file(file_id, data_type):
-    """Download one GDC file. TCGA stores one file per patient so we need many of these.
+    """Download one GDC file and parse it according to data_type.
 
-    Returns a pandas Series: gene_name -> value.
-
+    Returns a pandas Series: feature_name -> value.
     """
+    parser = _PARSERS.get(data_type)
+    if parser is None:
+        logger.debug("No parser for data_type %s", data_type)
+        return None
     try:
         resp = requests.get(f"{GDC_BASE_URL}/data/{file_id}", timeout=60)
         resp.raise_for_status()
         lines = resp.text.strip().split("\n")
-
-        data = {}
-        for line in lines:
-            # skip comment lines and header rows
-            if line.startswith("#") or line.startswith("gene_id"):
-                continue
-            # skip the summary rows (N_unmapped, N_multimapping, etc.)
-            if line.startswith("N_"):
-                continue
-
-            parts = line.split("\t")
-            if len(parts) >= 4:
-                gene_name = parts[1]  # gene_name column
-                try:
-                    value = float(parts[3])  # unstranded counts
-                    data[gene_name] = value
-                except ValueError:
-                    continue
-
+        data = parser(lines)
         if data:
             return pd.Series(data)
         return None
@@ -516,7 +554,7 @@ def _download_single_file(file_id, data_type):
         return None
 
 
-def _build_feature_matrix(file_records, data_type, max_files=600):
+def _build_feature_matrix(file_records, data_type, max_files=3000):
     """Download per-sample files and stack them into a samples x features matrix.
 
     Also returns a dict of case_id -> sample_type so its clear what tissue

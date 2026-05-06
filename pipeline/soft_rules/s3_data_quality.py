@@ -40,28 +40,28 @@ def non_constant(X):
         "n_features": int(p)
     }
 # reference: Liu, F. T., Ting, K. M., & Zhou, Z.-H. (2008).
-# "Isolation Forest." 8th IEEE Int. Conf. on Data Mining (ICDM 2008).
+# "Isolation Forest." 8th IEEE Int. Conf. on Data Mining  2008).
 def outlier_percentage(X):
+    # how IF works in plain terms:
+    # builds 100 random trees that keep splitting the data on random featurus.
+    # weird rows get isolted fast (few splits) -> flagged as outlier.
+    # normal row need many splits because theyre surrounded by similar rows.
+    # contamination=0.05 means it flags the 5% most-isolated rows as outliers.
+    # sklearn convention: -1 = outlier, +1 = normal (same for all anomaly detectors).
     n_rows = X.shape[0]
-    if n_rows < 10:
-        return 1.0, {"n_rows": n_rows, "skipped": "too few rows"}
-
-    # IsolationForest needs numeric, fully populated input
+    # IsolationForest needs numeric input
     X_num = X.select_dtypes(include="number")
     if X_num.shape[1] == 0:
         return 1.0, {"skipped": "no numeric columns"}
     X_filled = X_num.fillna(X_num.mean())
 
     # PCA pre-reduction so IF doesn't choke on 100k+ feature matrices
-    k = min(50, n_rows - 1, X_filled.shape[1])
+    k = min(40, n_rows - 1, X_filled.shape[1]) # 40 is educated guess, rows-1 is max for pca,
     X_reduced = PCA(n_components=k, random_state=42).fit_transform(X_filled)
-
-    forest = IsolationForest(contamination=0.05, n_estimators=100, random_state=42)
+    forest = IsolationForest(contamination=0.05, n_estimators=100, random_state=42) #unsupervised -> guess
     labels = forest.fit_predict(X_reduced)
-
-    # IsolationForest convention: -1 = outlier, +1 = inlier
-    n_outliers = (labels == 1).sum()
-    score = 1 - n_outliers / n_rows
+    n_outliers = (labels == -1).sum()
+    score = 1 - n_outliers / n_rows # higher outlier percentage -> lower score
 
     return score, {
         "n_outliers": int(n_outliers),
