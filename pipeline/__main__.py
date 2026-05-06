@@ -78,12 +78,12 @@ def main() -> None:
     log.info("=== Phase 4: running soft rules ===")
     for ds in datasets:
         results = [
-            s1.uniqueness.score(ds),
-            s2.iid.score(ds),
-            s3.missing_values.score(ds),
-            s4.outliers.score(ds),
-            s5.const_features.score(ds),
-            s6.class_balance.score(ds),
+            s1.score(ds),
+            s2.score(ds),
+            s3.score(ds),
+            s4.score(ds),
+            s5.score(ds),
+            s6.score(ds),
         ]
         soft_stats.record(ds, results)
 
