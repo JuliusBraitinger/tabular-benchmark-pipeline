@@ -11,6 +11,16 @@ import pandas as pd
 
 from pipeline.soft_rules.base import SoftRuleResult
 
+# Sub-metric weights for the final S3 score.
+#  JUST A EDUCATED GUESS NEEDS IMPROVEMENT 
+SUB_WEIGHTS = {
+    "c_miss":    0.30,  # completeness 
+    "c_consist": 0.20,  # consistent representation
+    "c_out":     0.20,  # outliers
+    "c_const":   0.15,  # constant features 
+    "c_uniq":    0.15,  # duplicates 
+}
+
 def completeness(X): #penalizes dataset with empty columns more than a flat total-cells ratio would
     n_rows, n_cols = X.shape
     if n_rows == 0 or n_cols == 0:
@@ -29,6 +39,8 @@ def completeness(X): #penalizes dataset with empty columns more than a flat tota
         "max_per_col_missing_rate": per_col_missing_rate.max(),
     }
 
+# reference: Breck, E., Polyzotis, N., Roy, S., Whang, S. E., & Zinkevich, M. (2019).
+# "Data Validation for Machine Learning." SysML 2019. (TFDV "useless feature" check)
 def non_constant(X):
     n_constant = (X.nunique() <= 1).sum()
     n_quasiconstant =  0 #column where (top-1 value frequency) > 0.95
@@ -70,6 +82,8 @@ def outlier_percentage(X):
         "contamination": 0.05,
     }
 
+# reference: Budach, L. et al. (2022). "The Effects of Data Quality on Machine
+# Learning Performance on Tabular Data." arXiv:2207.14529 (Consistent Representation dim.)
 def consistency(X):
     n_features = X.shape[1]
     n_mixed = 0 #columns with >1 unique type (e.g. int and string)
@@ -82,13 +96,31 @@ def consistency(X):
     score = 1 - n_mixed / n_features
     return score, {"n_mixed": int(n_mixed), "n_features": int(n_features)}
 
+
+# reference: Budach, L. et al. (2022). "The Effects of Data Quality on Machine
+# Learning Performance on Tabular Data." arXiv:2207.14529, Eq. (10).
+def uniquness(X, Y): #checks for duplicate rows including target -> non-unique = lower quality
+    dataframe = X.assign(target=Y)
+    n_total = dataframe.shape[0]
+    n_unique = pd.util.hash_pandas_object(dataframe).nunique()
+    score = n_unique / n_total
+    return score, {"n_unique": int(n_unique), "n_total": int(n_total)}
+
+
 def score(dataset):
     X = dataset.X
     c_miss, miss_details = completeness(X)
     c_const, const_details = non_constant(X)
     c_consist, consist_details = consistency(X)
     c_out, out_details = outlier_percentage(X)
-    final_score = (c_miss + c_const + c_consist + c_out) / 4 #for now equal weight average
+    c_uniqueness, uniqueness_details = uniquness(X, dataset.y)
+    final_score = (
+        SUB_WEIGHTS["c_miss"]    * c_miss
+        + SUB_WEIGHTS["c_consist"] * c_consist
+        + SUB_WEIGHTS["c_out"]     * c_out
+        + SUB_WEIGHTS["c_const"]   * c_const
+        + SUB_WEIGHTS["c_uniq"]    * c_uniqueness
+    )
 
     return SoftRuleResult(
         rule="S3",
@@ -98,9 +130,11 @@ def score(dataset):
             "c_const": c_const,
             "c_consist": c_consist,
             "c_out": c_out,
+            "c_uniqueness": c_uniqueness,
             **miss_details,
             **const_details,
             **consist_details,
             **out_details,
+            **uniqueness_details,
         }
     )
