@@ -557,8 +557,9 @@ def _download_single_file(file_id, data_type):
 def _build_feature_matrix(file_records, data_type, max_files=3000):
     """Download per-sample files and stack them into a samples x features matrix.
 
-    Also returns a dict of case_id -> sample_type so its clear what tissue
-    each row in the matrix actually came from.
+    Each file becomes its own row, indexed by file_id, so patients with both
+    tumor and matched-normal samples contribute multiple rows. Returns the
+    matrix and a dict of file_id -> sample_type for the target labels.
     """
     records = file_records[:max_files]
 
@@ -577,8 +578,8 @@ def _build_feature_matrix(file_records, data_type, max_files=3000):
     sample_types = {}
     for rec, series in results:
         if series is not None:
-            rows[rec["case_id"]] = series
-            sample_types[rec["case_id"]] = rec.get("sample_type", "")
+            rows[rec["file_id"]] = series
+            sample_types[rec["file_id"]] = rec.get("sample_type", "")
 
     if not rows:
         return None, {}
