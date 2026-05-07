@@ -85,7 +85,6 @@ def outlier_percentage(X):
         "contamination": "auto",
     }
 
-# reference: Budach, L. et al. (2022). "The Effects of Data Quality on Machine
 # Learning Performance on Tabular Data." arXiv:2207.14529 (Consistent Representation dim.) 
 #checking for columns with mixed types/values 
 def consistency(X):

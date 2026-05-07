@@ -11,7 +11,6 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 # --- Dimension thresholds (A5) ---
 MIN_ROWS = 500
 MIN_FEATURES = 10_000
-TARGET_ROWS = 100_000
 
 # --- Licence allow-list (A6) ---
 ALLOWED_LICENCES = frozenset({
