@@ -13,6 +13,7 @@
 # sklearn already permutation_test_score
 from __future__ import annotations
 
+import numpy as np
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import permutation_test_score
 from sklearn.preprocessing import LabelEncoder
@@ -33,12 +34,12 @@ def check_data(X, y, task_type="classification", **_kwargs):
     # pick the right model and metric based on task type
     if "classification" in task_type:
         model = RandomForestClassifier(
-            n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=42
+            n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=42, n_jobs=-1
         )
         scoring = "balanced_accuracy"
     else:
         model = RandomForestRegressor(
-            n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=42
+            n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=42, n_jobs=-1
         )
         scoring = "r2"
 
@@ -55,23 +56,24 @@ def check_data(X, y, task_type="classification", **_kwargs):
     # drop non-numeric columns (some openml datasets have strings mixed in)
     X = X.select_dtypes(include="number")
 
-    # replace NaNs with median? -> from paper
+    # subsample top 1000 most variable features before fillna so the rest of
+    # the pipeline only operates on a 1000-column matrix
+    if X.shape[1] > 1000:
+        var_arr = np.nan_to_num(np.nanvar(X.values, axis=0), nan=-1.0)
+        top_idx = np.argpartition(-var_arr, 1000)[:1000]
+        X = X.iloc[:, top_idx]
+
+    # replace NaNs with column means
     X = X.fillna(X.mean())
 
     # sklearn needs numeric labels, some datasets have strings like "tumor"/"normal"
     if "classification" in task_type:
         y = LabelEncoder().fit_transform(y)
 
-    # if way more features than samples, keep only the top 1000 most variable ones
-    # buug? oothweise si+oome tcga datasets wont get past this rule  TEMPORARY 
-    if X.shape[1] > 1000:
-        top_features = X.var().nlargest(1000).index
-        X = X[top_features]
-
     # run the permutation test - trains model on real labels, then shuffles labels N_PERMUTATIONS times
     results = permutation_test_score(
         model, X, y, scoring=scoring, cv=CV_FOLDS,
-        n_permutations=N_PERMUTATIONS, random_state=42,
+        n_permutations=N_PERMUTATIONS, random_state=42, n_jobs=-1,
     )
     real_score = results[0]  # how well the model did on real labels
     p_value = results[2]     # fraction of shuffled runs that beat the real score
