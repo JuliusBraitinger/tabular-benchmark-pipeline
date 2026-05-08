@@ -20,7 +20,7 @@ def compute_fingerprint(dataset):
 
     means = X.mean()
     stds = X.std()
-    skews = X.skew(axis=1)
+    skews = X.skew()
     kurts = X.kurtosis()
 
     return np.concatenate([
