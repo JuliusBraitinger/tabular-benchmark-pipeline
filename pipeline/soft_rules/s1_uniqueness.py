@@ -40,7 +40,9 @@ def score(dataset, pool_fingerprints=None):
             "max_similarity": 0.0,
         })
     max_sim = 0.0
-    for other_fp in pool_fingerprints.values():
+    for other_id,other_fp in pool_fingerprints.values():
+        if other_id == dataset.id:
+            continue
         sim = np.dot(own_fp, other_fp) / ( #similarity between fingerprint and pool (cosine similarity)
             np.linalg.norm(own_fp) * np.linalg.norm(other_fp)
         )
