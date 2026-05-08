@@ -3,6 +3,7 @@
 # reference: pymfe paper (Alcobaca et al., 2020)
 
 import numpy as np
+from scipy import stats as scipy_stats
 
 from pipeline.soft_rules.base import SoftRuleResult
 
@@ -10,18 +11,22 @@ from pipeline.soft_rules.base import SoftRuleResult
 QUANTILES = [0.10, 0.25, 0.50, 0.75, 0.90]
 
 
-def summarize(values):
-    quants = [values.quantile(q) for q in QUANTILES]
-    return np.array(quants + [values.mean(), values.std()])
+def summarize(values):  # collapse  per-column stats into 7 fixed numbers so fingerprints are comparable across datasets with different Features
+    arr = np.asarray(values, dtype=float)
+    if len(arr) == 0:
+        return np.zeros(7)
+    quants = np.quantile(arr, QUANTILES)
+    return np.concatenate([quants, [arr.mean(), arr.std()]])
 
 
 def compute_fingerprint(dataset):
     X = dataset.X.select_dtypes(include="number")
+    arr = X.to_numpy(dtype=float, copy=False)
 
-    means = X.mean()
-    stds = X.std()
-    skews = X.skew()
-    kurts = X.kurtosis()
+    means = np.nanmean(arr, axis=0)
+    stds = np.nanstd(arr, axis=0, ddof=1)
+    skews = scipy_stats.skew(arr, axis=0, nan_policy="omit")
+    kurts = scipy_stats.kurtosis(arr, axis=0, nan_policy="omit")
 
     return np.concatenate([
         summarize(means),
@@ -32,7 +37,10 @@ def compute_fingerprint(dataset):
 
 
 def score(dataset, pool_fingerprints=None):
-    own_fingerprint = compute_fingerprint(dataset)
+    if pool_fingerprints is not None and dataset.id in pool_fingerprints:
+        own_fingerprint = pool_fingerprints[dataset.id]
+    else:
+        own_fingerprint = compute_fingerprint(dataset)
 
     if pool_fingerprints is None or len(pool_fingerprints) < 2:
         return SoftRuleResult(rule="S1", score=1.0, details={
