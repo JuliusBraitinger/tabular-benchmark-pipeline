@@ -356,7 +356,13 @@ def fetch(candidate):
     if x_file.exists() and y_file.exists():
         # already downloaded before, just load it
         logger.info("found cache for %s, skipping download", project_id)
-        X = pd.read_parquet(x_file)
+        # raise pyarrow's thrift schema-size limit so wide methylation matrices
+        # (LUAD has ~915k columns) don't trip the default ~100MB cap
+        X = pd.read_parquet(
+            x_file,
+            thrift_string_size_limit=2**31 - 1,
+            thrift_container_size_limit=2**31 - 1,
+        )
         y = pd.read_parquet(y_file).squeeze()
     else:
         # no cache yet, download everything
