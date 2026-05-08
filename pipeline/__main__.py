@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import pickle
+import time
 from pathlib import Path
 
 from pipeline.data import registry
@@ -71,15 +72,32 @@ def main() -> None:
 
     # Phase 4: run soft rules and collect stats for accepted datasets
     log.info("=== Phase 4: running soft rules ===")
-    for ds in datasets:
-        results = [
-            s1.score(ds),
-            s2.score(ds),
-            s3.score(ds),
-            s4.score(ds),
-            s5.score(ds),
-            s6.score(ds),
-        ]
+
+    # S1 needs the pool of fingerprints to compute pairwise uniqueness, so
+    # precompute them in a first pass before scoring any dataset
+    #NOT A FIX SOLUTION -> JUST WORKAROUND FOR NOW 
+    log.info("Pre-computing S1 fingerprints for %d datasets...", len(datasets))
+    t_start = time.time()
+    s1_pool = {ds.id: s1.compute_fingerprint(ds) for ds in datasets}
+    log.info("S1 fingerprints ready (%.1fs)", time.time() - t_start)
+
+    pool_free_rules = [("S2", s2), ("S3", s3), ("S4", s4), ("S5", s5), ("S6", s6)]
+    n_datasets = len(datasets)
+    for i, ds in enumerate(datasets, 1):
+        log.info("[%d/%d] %s (X=%s) -- running soft rules", i, n_datasets, ds.id, ds.X.shape)
+        results = []
+
+        t_start = time.time()
+        s1_result = s1.score(ds, pool_fingerprints=s1_pool)
+        log.info("  S1: score=%.3f (%.1fs)", s1_result.score, time.time() - t_start)
+        results.append(s1_result)
+
+        for name, rule in pool_free_rules:
+            t_start = time.time()
+            result = rule.score(ds)
+            log.info("  %s: score=%.3f (%.1fs)", name, result.score, time.time() - t_start)
+            results.append(result)
+
         soft_stats.record(ds, results)
 
     soft_stats.save_csv("soft_stats.csv")
