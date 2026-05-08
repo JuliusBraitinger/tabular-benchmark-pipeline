@@ -13,6 +13,7 @@ QUANTILES = [0.10, 0.25, 0.50, 0.75, 0.90]
 
 def summarize(values):  # collapse  per-column stats into 7 fixed numbers so fingerprints are comparable across datasets with different Features
     arr = np.asarray(values, dtype=float)
+    arr = arr[~np.isnan(arr)] #filter out NAN
     if len(arr) == 0:
         return np.zeros(7)
     quants = np.quantile(arr, QUANTILES)
