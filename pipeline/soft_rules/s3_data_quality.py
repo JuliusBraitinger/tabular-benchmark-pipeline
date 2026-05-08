@@ -5,11 +5,31 @@
 # Budach et al. (2022), Eq. for Completeness:
 #        c_miss = 1 - (1/p) * sum_j ( missing(c_j) / n )
 
+import numpy as np
+import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.ensemble import IsolationForest
-import pandas as pd
 
 from pipeline.soft_rules.base import SoftRuleResult
+
+
+# When a dataset has more features than this, S3 subsamples to the
+# top-k most variable columns before doing the heavy operations
+# (PCA, hashing). Same trick A3 uses.
+MAX_FEATURES_FOR_HEAVY_OPS = 1000
+
+
+def top_variable_columns(X, k=MAX_FEATURES_FOR_HEAVY_OPS):
+    if X.shape[1] <= k:
+        return X
+    # variance per column; all-NaN columns become -1 so they never get picked
+    column_variances = np.nanvar(X.to_numpy(dtype=float, copy=False), axis=0)
+    column_variances = np.nan_to_num(column_variances, nan=-1.0)
+
+    # indices of the k columns with the highest variance
+    top_k_indices = np.argpartition(-column_variances, k)[:k]
+
+    return X.iloc[:, top_k_indices] 
 
 # Sub-metric weights for the final S3 score.
 #  JUST A EDUCATED GUESS NEEDS IMPROVEMENT 
@@ -69,9 +89,13 @@ def outlier_percentage(X):
     X_num = X.select_dtypes(include="number")
     if X_num.shape[1] == 0:
         return 1.0, {"skipped": "no numeric columns"}
-    X_filled = X_num.fillna(X_num.mean())
 
-    # PCA pre-reduction so IF doesn't choke on 100k+ feature matrices
+    # subsample wide matrices before fillna+PCA -- on 422k-cols methylation
+    # matrices PCA without this takes 10+ minutes per dataset
+    X_subset = top_variable_columns(X_num)
+    X_filled = X_subset.fillna(X_subset.mean())
+
+    # PCA pre-reduction so IF doesn't choke on the matrix
     k = min(40, n_rows - 1, X_filled.shape[1]) # 40 is educated guess, rows-1 is max for pca,
     X_reduced = PCA(n_components=k, random_state=42).fit_transform(X_filled)
     forest = IsolationForest(contamination='auto', n_estimators=100, random_state=42) #unsupervised -> guess
@@ -82,6 +106,7 @@ def outlier_percentage(X):
     return score, {
         "n_outliers": int(n_outliers),
         "n_components": int(k),
+        "n_features_used": int(X_subset.shape[1]),
         "contamination": "auto",
     }
 
@@ -103,11 +128,21 @@ def consistency(X):
 # reference: Budach, L. et al. (2022). "The Effects of Data Quality on Machine
 # Learning Performance on Tabular Data." arXiv:2207.14529, Eq. (10).
 def uniquness(X, Y): #checks for duplicate rows including target -> non-unique = lower quality
-    dataframe = X.assign(target=Y)
+    # subsample wide matrices before hashing -- on 422k-cols methylation
+    # matrices hash_pandas_object on the full frame takes minutes per dataset.
+    # Duplicate rows in the full matrix are still duplicate in the subset, and
+    # near-duplicates that differ only in noise columns get conflated, which is
+    # actually what we want for "are these the same sample".
+    X_subset = top_variable_columns(X)
+    dataframe = X_subset.assign(target=Y)
     n_total = dataframe.shape[0]
     n_unique = pd.util.hash_pandas_object(dataframe).nunique()
     score = n_unique / n_total
-    return score, {"n_unique": int(n_unique), "n_total": int(n_total)}
+    return score, {
+        "n_unique": int(n_unique),
+        "n_total": int(n_total),
+        "n_features_used": int(X_subset.shape[1]),
+    }
 
 
 def score(dataset):
