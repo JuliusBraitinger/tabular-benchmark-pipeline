@@ -1,5 +1,4 @@
 """TCGA data loader - scrapes GDC metadata and downloads gene expression matrices."""
-# TODO:  save full clinical data not just target(vital_status, tumor_stage, age, etc.)
 import json
 import logging
 import time
@@ -364,6 +363,7 @@ def fetch(candidate):
             thrift_container_size_limit=2**31 - 1,
         )
         y = pd.read_parquet(y_file).squeeze()
+        file_ids = _get_file_ids(project_id, data_type, workflow_type)
     else:
         # no cache yet, download everything
         logger.info("Downloading TCGA %s %s...", project_id, data_type)
@@ -402,6 +402,12 @@ def fetch(candidate):
         X.to_parquet(x_file)
         y.to_frame("target").to_parquet(y_file)
         logger.info("saved raw data to %s", folder)
+
+    # attach clinical (age, gender, vital_status, stage) per case
+    case_id_map = {rec["file_id"]: rec["case_id"] for rec in file_ids}
+    clinical = _fetch_clinical(project_id)
+    for col in CLINICAL_COLS:
+        X[col] = [clinical.get(case_id_map.get(fid, ""), {}).get(col, None) for fid in X.index]
 
     # Step 4: expensive data-level hard rules
     data_results = hard_rules.run_data_checks(X, y, task_type=candidate.task_type)
@@ -594,57 +600,33 @@ def _build_feature_matrix(file_records, data_type, max_files=3000):
     return X, sample_types
 
 
-def _download_clinical_target(project_id, task_type):
-    """Download clinical data and pick a target variable.
+CLINICAL_COLS = ["clinical_vital_status", "clinical_gender", "clinical_age", "clinical_stage"]
 
-    First try sample_type (e.g. Primary Tumor vs Solid Tissue Normal).
-    """
-    payload = {
-        "filters": {
-            "op": "=",
-            "content": {"field": "project.project_id", "value": project_id},
-        },
-        "fields": ",".join([
-            "submitter_id",
-            "demographic.vital_status",
-            "diagnoses.tumor_stage",
-            "samples.sample_type",
-            "samples.submitter_id",
-        ]),
-        "size": 2000,
+
+def _fetch_clinical(project_id): #fetch clinical data for all cases in the project, keyed by case_id
+    payload = { # from api values we want in clinical data
+        "filters": {"op": "=", "content": {"field": "project.project_id", "value": project_id}},
+        "fields": "submitter_id,demographic.vital_status,demographic.gender,demographic.age_at_index,diagnoses.ajcc_pathologic_stage",
+        "size": 5000,
         "format": "json",
     }
     try:
         data = _gdc_post("cases", payload)
-        hits = data["data"]["hits"]
-
-        # for each case, pick a single target value
-        targets = {}
-        for case in hits:
-            case_id = case.get("submitter_id", "")
-            if not case_id:
-                continue
-
-            # keep ONE target per patient which is in this case tumor state
-
-            # preferred: sample_type from the first sample
-            samples = case.get("samples", [])
-            if samples:
-                sample_type = samples[0].get("sample_type", "")
-                if sample_type:
-                    targets[case_id] = sample_type
-                    continue
-
-            # fallback: vital_status from demographics
-            demo = case.get("demographic") or {}
-            vital = demo.get("vital_status", "")
-            if vital:
-                targets[case_id] = vital
-
-        if not targets:
-            return None
-        return pd.Series(targets, name="target")
-
     except Exception as e:
-        logger.warning("Failed to download clinical data for %s: %s", project_id, e)
-        return None
+        logger.warning("Failed to fetch clinical for %s: %s", project_id, e)
+        return { }
+
+    out = {}
+    for case in data[data][hits]:
+        case_id = case.get("submitter_id")
+        if not case_id:
+            continue
+        demo = case.get("demographic") or {}
+        diag = (case.get("diagnoses") or [{}])[0] or {}
+        out[case_id] = {
+            "linical_vital_status": demo.get("vital_status") ,
+            "clinical_gender": demo.get("gender") ,
+            "clinical_age": demo.get("age_at_index"),
+            "clinical_stage": diag.get("ajcc_pathologic_stage") ,
+        }
+    return out
