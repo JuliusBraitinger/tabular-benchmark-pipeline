@@ -614,19 +614,19 @@ def _fetch_clinical(project_id): #fetch clinical data for all cases in the proje
         data = _gdc_post("cases", payload)
     except Exception as e:
         logger.warning("Failed to fetch clinical for %s: %s", project_id, e)
-        return { }
+        return {}
 
     out = {}
-    for case in data[data][hits]:
+    for case in data["data"]["hits"]:
         case_id = case.get("submitter_id")
         if not case_id:
             continue
         demo = case.get("demographic") or {}
         diag = (case.get("diagnoses") or [{}])[0] or {}
         out[case_id] = {
-            "linical_vital_status": demo.get("vital_status") ,
-            "clinical_gender": demo.get("gender") ,
+            "clinical_vital_status": demo.get("vital_status") or None,
+            "clinical_gender": demo.get("gender") or None,
             "clinical_age": demo.get("age_at_index"),
-            "clinical_stage": diag.get("ajcc_pathologic_stage") ,
+            "clinical_stage": diag.get("ajcc_pathologic_stage") or None,
         }
     return out
