@@ -421,7 +421,7 @@ def fetch(candidate):
     )
 
     return Dataset(
-        id=f"TCGA-{candidate.id}",
+        id=candidate.id,
         source="tcga",
         name=candidate.name,
         X=X,
