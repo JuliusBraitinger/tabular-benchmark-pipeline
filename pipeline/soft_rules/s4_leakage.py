@@ -8,7 +8,7 @@ from scipy.stats import rankdata
 import numpy as np
 from pipeline.soft_rules.s3_data_quality import top_variable_columns, MAX_FEATURES_FOR_HEAVY_OPS
 
-SUB_WEIGHTS = {"A": 0.5, "B": 0.5} #JUST A EDUCATED GUESS NEEDS IMPROVEMENT
+
 
 def per_feature_stat(X, y, task_type):
     # per-feature predictive stat in [0, 1]. 1.0 = uninformative (clean),
@@ -66,4 +66,7 @@ def check_target_leakage(dataset): #TODO implement
     }
 
 def score(dataset, pool=None):
-    return SoftRuleResult(rule="S4", score=1.0, details={})
+    score, details = check_target_leakage(dataset)
+    return SoftRuleResult(rule="S4", score = score, details={"score": score, "details": details})
+
+    #TODO implement group k-fold test for group leakage 
