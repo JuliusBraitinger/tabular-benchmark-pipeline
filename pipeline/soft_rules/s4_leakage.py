@@ -35,7 +35,14 @@ def per_feature_stat(X, y, task_type):
         return 2 * np.minimum(auc, 1 - auc)
 
     # toDO regression
-    return None
+    if task_type == "regression":
+        ranks_y = rankdata(np.asarray(y, dtype=float))
+        x_centered = ranks_x - ranks_x.mean(axis=0)
+        y_centered = ranks_y - ranks_y.mean()
+        num = (x_centered * y_centered[:]).sum(axis=0)
+        denom = np.sqrt((x_centered * 2).sum(axis=0) * (y_centered * 2).sum())
+        rho = np.divide(num, denom, out=np.zeros_like(num), where=denom > 0)
+        return np.abs(rho)
 
 
 def check_target_leakage(X, y, task_type): #TODO implement
