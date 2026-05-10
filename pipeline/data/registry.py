@@ -89,7 +89,12 @@ def fetch_all(
         # stop early if we've collected enough
         if max_datasets and len(datasets) >= max_datasets:
             break
-        dataset = fetch(candidate)
+        # one bad candidate shouldn't kill the rest of the run
+        try:
+            dataset = fetch(candidate)
+        except Exception:
+            logger.exception("fetch failed for %s, skipping", candidate.id)
+            continue
         # fetch() returns None if hard rules failed, skip those
         if dataset is not None:
             datasets.append(dataset)

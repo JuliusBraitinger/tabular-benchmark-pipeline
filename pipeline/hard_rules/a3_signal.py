@@ -56,6 +56,9 @@ def check_data(X, y, task_type="classification", **_kwargs):
     # drop non-numeric columns (some openml datasets have strings mixed in)
     X = X.select_dtypes(include="number")
 
+    # sklearn rejects DataFrames whose column names mix int and str types
+    X = X.rename(columns=str)
+
     # subsample top 1000 most variable features before fillna so the rest of
     # the pipeline only operates on a 1000-column matrix
     if X.shape[1] > 1000:
