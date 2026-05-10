@@ -39,10 +39,10 @@ def per_feature_stat(X, y, task_type):
         ranks_y = rankdata(np.asarray(y, dtype=float))
         x_centered = ranks_x - ranks_x.mean(axis=0)
         y_centered = ranks_y - ranks_y.mean()
-        num = (x_centered * y_centered[:]).sum(axis=0)
-        denom = np.sqrt((x_centered * 2).sum(axis=0) * (y_centered * 2).sum())
-        rho = np.divide(num, denom, out=np.zeros_like(num), where=denom > 0)
-        return np.abs(rho)
+        num = (x_centered * y_centered[:, None]).sum(axis=0)
+        denom = np.sqrt((x_centered ** 2).sum(axis=0) * (y_centered ** 2).sum())
+        rho = np.divide(num, denom, out=np.zeros_like(num), where=denom > 0) #spearman correlation per feature 
+        return 1 - np.abs(rho) # both rho=1 and rho=-1 mean the feature is fully predictive, so take absolute value and flip to [0, 1] range
 
 
 def check_target_leakage(X, y, task_type): #TODO implement
