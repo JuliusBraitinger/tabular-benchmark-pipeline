@@ -45,8 +45,25 @@ def per_feature_stat(X, y, task_type):
         return 1 - np.abs(rho) # both rho=1 and rho=-1 mean the feature is fully predictive, so take absolute value and flip to [0, 1] range
 
 
-def check_target_leakage(X, y, task_type): #TODO implement
-    return per_feature_stat(X, y, task_type)
+def check_target_leakage(dataset): #TODO implement
+    X = dataset.X.select_dtypes(include="number")
+    X = X.loc[:, X.unique() < 1] #drop constant features since they can't leak
+    stats = per_feature_stat(X, dataset.y, dataset.task_type)
+    top_stats = stats.max() #if any feature is highly predictive of the target, it's suspicious for leakage
+    p99 = np.percentile(stats, 99) # look at the 99th percentile to catch cases where one feature is super predictive but others are not
+
+    leak_strength = max(top_stats, p99) 
+    sub_score = 1.0 - leak_strength # flip to [0, 1] range where 1.0 means no leakage and 0.0 means strong leakage
+
+    top_idx = np.argsort(-stats)[:5] #indices of the top 5 most predictive features
+    top_features = [(str(X.columns[i]), float(stats[i])) for i in top_idx] #get the column names and stats of the top features for the details
+    return sub_score, {
+        "top_stat": top_stats,
+        "p99_stat": p99,
+        "gap": top_stats - p99,
+        "top_features": top_features,
+        "n_features_scored": int(X.shape[1]),
+    }
 
 def score(dataset, pool=None):
     return SoftRuleResult(rule="S4", score=1.0, details={})
