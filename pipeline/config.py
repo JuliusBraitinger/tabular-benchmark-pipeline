@@ -17,6 +17,14 @@ MIN_FEATURES = 10_000
 # are skipped at candidate listing time to avoid OOM kills.
 MAX_FEATURES = 200_000
 
+# --- Kaggle loader thresholds ---
+KAGGLE_MIN_BYTES = 5_000_000      # 5 MB: rough A5 lower bound on zip size
+KAGGLE_MAX_BYTES = 2_000_000_000  # 2 GB: stay under MAX_FEATURES OOM territory
+KAGGLE_TARGET_NAMES = (
+    "target", "label", "class", "y", "outcome", "survived", "diagnosis",
+)
+KAGGLE_TARGET_SUFFIXES = ("_label", "_target", "_class")
+
 # --- Licence allow-list (A6) ---
 ALLOWED_LICENCES = frozenset({
     "cc0-1.0", "cc0", "public-domain",
