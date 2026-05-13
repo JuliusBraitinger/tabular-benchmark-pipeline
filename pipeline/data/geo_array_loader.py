@@ -16,6 +16,7 @@ import re
 import time
 
 import GEOparse
+import numpy as np
 import pandas as pd
 import requests
 from Bio import Entrez
@@ -24,6 +25,7 @@ from pipeline import stats
 from pipeline.config import (
     ENTREZ_BASE_URL,
     ENTREZ_EMAIL,
+    MAX_FEATURES,
     MIN_FEATURES,
     NCBI_API_KEY,
     REQUEST_DELAY,
@@ -63,24 +65,22 @@ NORMAL_PATTERN = re.compile(
 )
 
 # GEO search queries (we loop over all of them and combine the results).
-# Each query filters for human microarray studies that look like they have
-# tumor/normal contrast.
+# Each query filters for human microarray studies large enough to satisfy
+# the A5 hard rule (N>=500). We try several topical contrast pairs to get
+# enough variety; duplicates across queries are dropped via the `seen` set.
+_QUERY_BASE = (
+    '"Homo sapiens"[ORGN] AND gse[ETYP]'
+    ' AND "Expression profiling by array"[DataSet Type]'
+    ' AND 500:1000000[Number of Samples]'
+)
 GEO_QUERIES = [
-    (
-        '"Homo sapiens"[ORGN] AND gse[ETYP]'
-        ' AND "Expression profiling by array"[DataSet Type]'
-        ' AND ("tumor"[All Fields] AND "normal"[All Fields])'
-    ),
-    (
-        '"Homo sapiens"[ORGN] AND gse[ETYP]'
-        ' AND "Expression profiling by array"[DataSet Type]'
-        ' AND ("cancer"[All Fields] AND "control"[All Fields])'
-    ),
-    (
-        '"Homo sapiens"[ORGN] AND gse[ETYP]'
-        ' AND "Expression profiling by array"[DataSet Type]'
-        ' AND ("disease"[All Fields] AND "healthy"[All Fields])'
-    ),
+    f'{_QUERY_BASE} AND ("tumor"[All Fields] AND "normal"[All Fields])',
+    f'{_QUERY_BASE} AND ("cancer"[All Fields] AND "control"[All Fields])',
+    f'{_QUERY_BASE} AND ("disease"[All Fields] AND "healthy"[All Fields])',
+    f'{_QUERY_BASE} AND ("survival"[All Fields])',
+    f'{_QUERY_BASE} AND ("prognosis"[All Fields])',
+    f'{_QUERY_BASE} AND ("subtype"[All Fields])',
+    f'{_QUERY_BASE} AND ("differentiation"[All Fields])',
 ]
 
 
@@ -89,7 +89,7 @@ GEO_QUERIES = [
 # then fetch their summary metadata before downloading the full thing.
 
 
-def _esearch(query, retmax=200):
+def _esearch(query, retmax=2000):
     """Search GEO via Entrez. Returns a list of UIDs (study IDs)."""
     handle = Entrez.esearch(db="gds", term=query, retmax=retmax, usehistory="y")
     record = Entrez.read(handle)
@@ -223,7 +223,7 @@ def list_candidates(max_candidates=50):
 
         logger.info("  Query: %s...", query[:70])
         try:
-            uids = _esearch(query, retmax=200)
+            uids = _esearch(query, retmax=2000)
         except Exception as e:
             logger.warning("  Search failed: %s", e)
             continue
@@ -283,6 +283,13 @@ def list_candidates(max_candidates=50):
                     fail = RuleResult(rule="pre-filter", passed=False, reason=reason)
                     stats.record(accession, "geo_array", title, [fail])
                     continue
+                if n_features is not None and n_features > MAX_FEATURES:
+                    logger.debug("  %s: P=%d > %d, skipping (won't fit in RAM)",
+                                 accession, n_features, MAX_FEATURES)
+                    reason = "P=" + str(n_features) + " > " + str(MAX_FEATURES) + " (RAM cap)"
+                    fail = RuleResult(rule="pre-filter", passed=False, reason=reason)
+                    stats.record(accession, "geo_array", title, [fail])
+                    continue
 
                 # run the central metadata hard rules
                 results = hard_rules.run_metadata_checks(
@@ -329,79 +336,119 @@ def list_candidates(max_candidates=50):
     return candidates
 
 
-def fetch(candidate):
-    """Download the GEO Series Matrix and extract expression values + labels.
+def _series_matrix_url(accession):
+    """Build the NCBI FTP URL for {accession}_series_matrix.txt.gz.
 
-    Series Matrix files are already tabular (probes x samples), so we just
-    transpose them and pull the tumor/normal labels out of the metadata.
+    GEO groups studies into sub-folders by accession prefix:
+        GSE12345  -> .../GSE12nnn/GSE12345/matrix/
+        GSE5      -> .../GSEnnn/GSE5/matrix/
+    """
+    num = accession[3:]  # strip "GSE"
+    folder_prefix = num[:-3] if len(num) > 3 else ""
+    folder = f"GSE{folder_prefix}nnn"
+    filename = f"{accession}_series_matrix.txt.gz"
+    return f"https://ftp.ncbi.nlm.nih.gov/geo/series/{folder}/{accession}/matrix/{filename}"
+
+
+def _expression_from_series_matrix(accession):
+    """Download the Series Matrix file and parse the expression block.
+
+    `pd.read_csv(comment="!")` skips every header line (all start with `!`)
+    and the begin/end markers, leaving just the column header + data rows.
+    Returns probes x samples df, transposed below.
+    """
+    cache_path = os.path.join(CACHE_DIR, f"{accession}_series_matrix.txt.gz")
+    if not os.path.exists(cache_path):
+        url = _series_matrix_url(accession)
+        logger.info("  Fetching %s", url)
+        with requests.get(url, timeout=180, stream=True) as response:
+            response.raise_for_status()
+            with open(cache_path, "wb") as fh:
+                for chunk in response.iter_content(chunk_size=65536):
+                    fh.write(chunk)
+    df = pd.read_csv(cache_path, sep="\t", comment="!", index_col=0,
+                     compression="gzip", low_memory=False)
+    # Cast to float32 column-by-column so we don't carry a float64 copy alongside the result.
+    for col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce").astype(np.float32)
+    return df.T
+
+
+def fetch(candidate):
+    """Download GEO expression data + labels and run data-level hard rules.
+
+    Tries per-GSM tables (from the SOFT file) first. Some studies don't
+    embed expression values there, so falls back to downloading the
+    Series Matrix file directly from NCBI FTP.
     """
     accession = candidate.id
-    logger.info("Downloading GEO %s Series Matrix...", accession)
+    logger.info("Downloading GEO %s...", accession)
 
     os.makedirs(CACHE_DIR, exist_ok=True)
 
-    # download the GSE via GEOparse (uses the cache if we've seen it before)
     try:
         gse = GEOparse.get_GEO(accession, destdir=CACHE_DIR, silent=True)
     except Exception as e:
         logger.warning("Failed to download %s: %s", accession, e)
         return None
 
-    # every GSE should have at least one platform (GPL). If not, something's wrong.
     if not gse.gpls:
         logger.warning("%s: no platform found", accession)
         return None
 
-    # we'll collect per-sample expression Series + their labels
-    sample_dfs = []
-    sample_ids = []
-    labels = {}
+    # Always try to derive labels from SOFT metadata (it's there even when values are stripped)
+    # Build X as float32 row-by-row to keep peak memory ~half of what
+    # pd.concat(...).apply(pd.to_numeric) would use.
+    ref_index = None
+    sample_arrays: list[np.ndarray] = []
+    sample_ids: list[str] = []
+    labels: dict[str, str] = {}
 
-    # walk every sample (GSM) in this study
     for gsm_id, gsm in gse.gsms.items():
         table = gsm.table
-        if table is None or table.empty:
-            continue
-
-        # expression values: each row is a probe, columns are ID_REF + VALUE
-        if "VALUE" in table.columns and "ID_REF" in table.columns:
-            series = table.set_index("ID_REF")["VALUE"]
-            series.name = gsm_id
-            sample_dfs.append(series)
+        if (table is not None and not table.empty
+                and "VALUE" in table.columns and "ID_REF" in table.columns):
+            series = pd.to_numeric(
+                table.set_index("ID_REF")["VALUE"], errors="coerce",
+            )
+            if ref_index is None:
+                ref_index = series.index
+            sample_arrays.append(
+                series.reindex(ref_index).to_numpy(dtype=np.float32, copy=False)
+            )
             sample_ids.append(gsm_id)
 
-        # figure out the label for this sample from its metadata
         chars = gsm.metadata.get("characteristics_ch1", [])
         source = " ".join(gsm.metadata.get("source_name_ch1", []))
         combined = " ".join(chars) + " " + source
-
         if TUMOR_PATTERN.search(combined):
             labels[gsm_id] = "tumor"
         elif NORMAL_PATTERN.search(combined):
             labels[gsm_id] = "normal"
         else:
-            # fallback: use the first "key: value" characteristic as the label
             for char in chars:
                 if ":" in char:
                     labels[gsm_id] = char.split(":", 1)[1].strip()
                     break
 
-    # no expression data at all? nothing we can do
-    if not sample_dfs:
-        logger.warning("%s: no expression data in GSM tables", accession)
-        return None
-
-    # stack the per-sample Series into a DataFrame (probes x samples)
-    # then transpose so rows = samples, columns = probes (the ML convention)
-    X = pd.concat(sample_dfs, axis=1).T
-    X.index = sample_ids
-
-    # convert everything to numbers, replace bad values with NaN
-    X = X.apply(pd.to_numeric, errors="coerce")
+    if sample_arrays:
+        X = pd.DataFrame(
+            np.vstack(sample_arrays), index=sample_ids, columns=ref_index,
+        )
+    else:
+        # SOFT file has no per-GSM tables; download the Series Matrix file instead
+        logger.info("%s: per-GSM tables empty, falling back to Series Matrix file", accession)
+        try:
+            X = _expression_from_series_matrix(accession)
+        except Exception as e:
+            logger.warning("%s: Series Matrix fallback failed: %s", accession, e)
+            return None
+        if X is None or X.empty:
+            logger.warning("%s: no expression data found", accession)
+            return None
 
     y = pd.Series(labels, name="target")
 
-    # only keep samples that appear in both X and y
     shared = X.index.intersection(y.index)
     if len(shared) < 10:
         logger.warning("%s: only %d labeled samples", accession, len(shared))
@@ -410,7 +457,6 @@ def fetch(candidate):
     X = X.loc[shared]
     y = y.loc[shared]
 
-    # data-level hard rules (A1 inference, A3 signal, A5 dimensions)
     data_results = hard_rules.run_data_checks(X, y, task_type=candidate.task_type)
     failed = hard_rules.failed_rules(data_results)
     if failed:
@@ -418,7 +464,6 @@ def fetch(candidate):
         logger.info("GEO %s discarded (data check): %s", accession, reasons)
         return None
 
-    # if A1 figured out a task from the target, use that; otherwise keep the candidate's value
     task_type = hard_rules.inferred_task_type(data_results) or candidate.task_type
     stats.record(accession, "geo_array", candidate.name, data_results)
 
@@ -427,7 +472,6 @@ def fetch(candidate):
         accession, X.shape[0], X.shape[1], task_type,
     )
 
-    # final Dataset object. ID gets a "GEO-" prefix so you can tell where it came from.
     return Dataset(
         id=f"GEO-{accession}",
         source="geo_array",
