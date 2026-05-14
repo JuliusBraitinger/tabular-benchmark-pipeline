@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import os
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +22,7 @@ import pandas as pd
 import requests
 
 from kaggle.api.kaggle_api_extended import KaggleApi
+
 from pipeline import stats
 from pipeline.config import (
     KAGGLE_MAX_BYTES,
@@ -49,7 +51,6 @@ def fetch(candidate: CandidateInfo):
 
     # Step 1: download + unzip (skip if cached)
     if not extract_dir.exists():
-        from kaggle.api.kaggle_api_extended import KaggleApi
         api = KaggleApi()
         try:
             api.authenticate()
@@ -58,7 +59,7 @@ def fetch(candidate: CandidateInfo):
         except Exception as e:
             logger.warning("Failed to download Kaggle %s: %s", id, e)
             return None
-    csv_files = list(extract_dir.glob("*.csv")) + list (extract_dir.glob("**/*.csv"))
+    csv_files = list(extract_dir.rglob("*.csv"))
     if not csv_files:
         logger.warning("No CSV files found in Kaggle %s", id)
         return None
@@ -68,23 +69,24 @@ def fetch(candidate: CandidateInfo):
     except Exception as e:
         logger.warning("Failed to read CSV from Kaggle %s: %s", id, e)
         return None
-    
+
     # Step 2: detect target column
     target_col = candidate.metadata.get("target_col")
     lowered = {c.lower(): c for c in df.columns} # map lowercase column names to original names for case-insensitive matching
-    resolved = lowered.get(target_col.lower(), df.columns[-1]) # match target_col case-insensitively, fall back to last column if not found. 
+    resolved = lowered.get((target_col or "").lower(), df.columns[-1]) # match target_col case-insensitively, fall back to last column if not found.
     y = df[resolved]
     X = df.drop(columns=[resolved])
 
     # Step 3: run hard rules
-    data_result = hard_rules.runr_data_checks(X, y, task_type=candidate.task_type)    
-    stats.record("kaggle_data_checks", id, data_result)
-    failed = hard_rules.get_failed_checks(data_result)
+    data_result = hard_rules.run_data_checks(X, y, task_type=candidate.task_type)
+    stats.record(id, "kaggle", candidate.name, data_result)
+    failed = hard_rules.failed_rules(data_result)
     if failed:
         logger.info("Kaggle %s failed hard rules: %s", id, failed)
         return None
-    
-    task_type = candidate.task_type
+
+    # A1 can refine task_type from the actual target (binary -> classification, etc.)
+    task_type = hard_rules.inferred_task_type(data_result) or candidate.task_type
 
     logger.info("Kaggle %s passed hard rules, loading dataset...", id)
 
@@ -97,7 +99,8 @@ def fetch(candidate: CandidateInfo):
         task_type=task_type,
         metadata={
             **candidate.metadata,
-            "licenses": candidate.licenses,
+            "licence": candidate.licence,
             "url": f"https://www.kaggle.com/datasets/{id}",
         },
     )
+
