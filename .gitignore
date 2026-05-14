@@ -22,6 +22,7 @@ env/
 
 #data
 data/
+!kaggle_loader.py
 
 # Logs
 *.log
