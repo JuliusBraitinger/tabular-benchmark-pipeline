@@ -10,7 +10,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # --- Dimension thresholds (A5) ---
 MIN_ROWS = 500
-MIN_FEATURES = 10_000
+MIN_FEATURES = 500
 # Upper bound: a 16 GB box can't hold a dense float32 matrix much larger than
 # this once concat / pyarrow / joblib copies are factored in. Microarray
 # studies above this cap (typically methylation/CNV with 450k-850k probes)
