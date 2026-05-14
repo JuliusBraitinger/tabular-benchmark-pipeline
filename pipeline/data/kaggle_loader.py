@@ -106,7 +106,7 @@ def fetch(candidate: CandidateInfo):
 
 
 
-def fetch_croissant_fields(ref: str) -> list[str]:
+def fetch_croissant_fields(ref: str, auth: tuple [str,str]) -> list[str]:
     url = CROISSANT_URL.format(ref=ref)
     try:
         response = requests.get(url, timeout=HTTP_TIMEOUT)
@@ -175,4 +175,49 @@ def list_candidates(max_candidates: int = 50):
             total_bytes = getattr(result, "total_bytes", 0)
 
             # Fetch Croissant export to get column names for hard rules (skip if cached)
-            field_names = fetch_croissant_fields(id)
+            field_names = fetch_croissant_fields(id, auth=(username, key))
+            if not field_names:
+                fail = RuleResult(rule="pre-filter", passed=False, reason="no croissant schema")
+                stats.record(id, "kaggle", title, [fail])
+                continue
+
+            n_features = len(field_names)
+            if n_features < MIN_FEATURES:
+                failed = RuleResult(rule="pre-filter", passed=False,
+                                  reason=f"P={n_features} < {MIN_FEATURES}")
+                stats.record(id, "kaggle", title, [fail])
+                continue
+            if n_features > MAX_FEATURES:
+                failed = RuleResult(rule="pre-filter", passed=False,
+                                  reason=f"P={n_features} > {MAX_FEATURES} (RAM cap)")
+                stats.record(id, "kaggle", title, [fail])
+                continue
+            results = hard_rules.run_metadata_checks(
+                n_samples=None,
+                n_features=n_features,
+                task_type="unknown",
+                licence=license,
+                source="kaggle",
+                name=title,
+            )
+            stats.record(id, "kaggle", title, results)
+            if not hard_rules.all_passed(results):
+                continue
+
+            candidates.append(CandidateInfo(
+                id=id,
+                source="kaggle",
+                name=title[:80],
+                n_samples=None,
+                n_features=n_features,
+                task_type="unknown",
+                licence=licence,
+                url=f"https://www.kaggle.com/datasets/{id}",
+            ))
+            time.sleep(REQUEST_DELAY)
+
+        page += 1 #paginate to the next page of results s
+
+    logger.info("Kaggle: %d candidates after metadata filters", len(candidates))
+    return candidates
+            
