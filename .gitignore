@@ -23,6 +23,7 @@ env/
 #data
 data/
 !kaggle_loader.py
+!uci_loader.py
 
 # Logs
 *.log
