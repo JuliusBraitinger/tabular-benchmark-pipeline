@@ -21,14 +21,12 @@ import numpy as np
 import pandas as pd
 import requests
 
-from kaggle.api.kaggle_api_extended import KaggleApi
-
+# IMPORTANT: pipeline.config must be imported BEFORE kaggle, for whater reason, otherwise the
+# Kaggle API client will ignore the timeout config and hang indefinitely on slow downloads.
 from pipeline import stats
 from pipeline.config import (
     KAGGLE_MAX_BYTES,
     KAGGLE_MIN_BYTES,
-    KAGGLE_TARGET_NAMES,
-    KAGGLE_TARGET_SUFFIXES,
     MAX_FEATURES,
     MIN_FEATURES,
     REQUEST_DELAY,
@@ -37,11 +35,14 @@ from pipeline.data.base import CandidateInfo, Dataset
 from pipeline.hard_rules import runner as hard_rules
 from pipeline.hard_rules.base import RuleResult
 
+from kaggle.api.kaggle_api_extended import KaggleApi  # noqa: E402
+
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = Path("/tmp/kaggle_cache")
 CROISSANT_URL = "https://www.kaggle.com/datasets/{ref}/croissant/download"
 HTTP_TIMEOUT = 30
+
 
 def fetch(candidate: CandidateInfo):
     id = candidate.id
@@ -109,7 +110,7 @@ def fetch(candidate: CandidateInfo):
 def fetch_croissant_fields(ref: str, auth: tuple [str,str]) -> list[str]:
     url = CROISSANT_URL.format(ref=ref)
     try:
-        response = requests.get(url, timeout=HTTP_TIMEOUT)
+        response = requests.get(url, auth=auth, timeout=HTTP_TIMEOUT)
         response.raise_for_status()
         data = response.json()
     except (requests.exceptions.RequestException, ValueError) as e:
@@ -126,7 +127,7 @@ def fetch_croissant_fields(ref: str, auth: tuple [str,str]) -> list[str]:
     for f in fields:
         name = f.get("name")
         if name:
-            names.appends(name)
+            names.append(name)
     return names
 
 
@@ -153,8 +154,8 @@ def list_candidates(max_candidates: int = 50):
         try:
             results = api.dataset_list(
                 file_type="csv",
-                min_size=KAGGLE_MIN_BYTES,
-                max_size=KAGGLE_MAX_BYTES,
+                min_size=str(KAGGLE_MIN_BYTES),
+                max_size=str(KAGGLE_MAX_BYTES),
                 sort_by="hottest",
                 page=page,
             )
@@ -183,16 +184,16 @@ def list_candidates(max_candidates: int = 50):
 
             n_features = len(field_names)
             if n_features < MIN_FEATURES:
-                failed = RuleResult(rule="pre-filter", passed=False,
+                fail = RuleResult(rule="pre-filter", passed=False,
                                   reason=f"P={n_features} < {MIN_FEATURES}")
                 stats.record(id, "kaggle", title, [fail])
                 continue
             if n_features > MAX_FEATURES:
-                failed = RuleResult(rule="pre-filter", passed=False,
+                fail = RuleResult(rule="pre-filter", passed=False,
                                   reason=f"P={n_features} > {MAX_FEATURES} (RAM cap)")
                 stats.record(id, "kaggle", title, [fail])
                 continue
-            results = hard_rules.run_metadata_checks(
+            meta_results = hard_rules.run_metadata_checks(
                 n_samples=None,
                 n_features=n_features,
                 task_type="unknown",
@@ -200,8 +201,8 @@ def list_candidates(max_candidates: int = 50):
                 source="kaggle",
                 name=title,
             )
-            stats.record(id, "kaggle", title, results)
-            if not hard_rules.all_passed(results):
+            stats.record(id, "kaggle", title, meta_results)
+            if not hard_rules.all_passed(meta_results):
                 continue
 
             candidates.append(CandidateInfo(
@@ -211,8 +212,9 @@ def list_candidates(max_candidates: int = 50):
                 n_samples=None,
                 n_features=n_features,
                 task_type="unknown",
-                licence=licence,
+                licence=license,
                 url=f"https://www.kaggle.com/datasets/{id}",
+                metadata={"total_bytes": total_bytes},
             ))
             time.sleep(REQUEST_DELAY)
 
