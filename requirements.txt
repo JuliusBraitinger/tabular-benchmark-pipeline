@@ -5,3 +5,4 @@ openml>=0.14
 GEOparse>=2.0
 biopython>=1.81
 requests>=2.31
+kaggle>=1.6

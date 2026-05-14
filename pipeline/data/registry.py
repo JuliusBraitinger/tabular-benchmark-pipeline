@@ -14,7 +14,7 @@ import logging
 from typing import Callable
 
 from pipeline.data import base  # Dataset + CandidateInfo dataclasses
-from pipeline.data import geo_array_loader, openml_loader, tcga_loader  # one loader per source
+from pipeline.data import geo_array_loader, kaggle_loader, openml_loader, tcga_loader  # one loader per source
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,10 @@ _LOADERS: dict[str, dict[str, Callable]] = {
     "geo_array": {
         "list": geo_array_loader.list_candidates,
         "fetch": geo_array_loader.fetch,
+    },
+    "kaggle": {
+        "list": kaggle_loader.list_candidates,
+        "fetch": kaggle_loader.fetch,
     },
 }
 
