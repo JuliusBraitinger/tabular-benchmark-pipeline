@@ -104,3 +104,75 @@ def fetch(candidate: CandidateInfo):
         },
     )
 
+
+
+def fetch_croissant_fields(ref: str) -> list[str]:
+    url = CROISSANT_URL.format(ref=ref)
+    try:
+        response = requests.get(url, timeout=HTTP_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+    except (requests.exceptions.RequestException, ValueError) as e:
+        logger.warning("Failed to fetch Croissant for %s: %s", ref, e)
+        return []
+    
+    record_sets = data.get("recordSet") or []
+    if not record_sets:
+        return []
+    
+    best = max(record_sets, key=lambda rs: len(rs.get("field") or [])) #given recodSet, return number of fields it hat and pick the one with the most fields as the best guess for the main dataset
+    fields = best.get("field", [])
+    names = []
+    for f in fields:
+        name = f.get("name")
+        if name:
+            names.appends(name)
+    return names
+
+
+def list_candidates(max_candidates: int = 50):
+    logger.info("Listing Kaggle datasets...")
+
+    try:
+        username = os.environ["KAGGLE_USERNAME"]
+        key = os.environ["KAGGLE_KEY"]
+    except KeyError:
+        logger.warning("Kaggle API credentials not found in environment variables, skipping Kaggle datasets.")
+        return []
+    api = KaggleApi()
+    try:
+        api.authenticate()
+    except Exception as e:
+        logger.warning("Failed to authenticate with Kaggle API: %s", e)
+        return []
+    
+    candidates: list[CandidateInfo] = []
+    page = 1
+
+    while len(candidates) < max_candidates:
+        try:
+            results = api.dataset_list(
+                file_type="csv",
+                min_size=KAGGLE_MIN_BYTES,
+                max_size=KAGGLE_MAX_BYTES,
+                sort_by="hottest",
+                page=page,
+            )
+        except Exception as e:
+            logger.warning("Kaggle dataset_list page %d failed: %s", page, e)
+            break
+
+        for result in results:
+            if len(candidates) >= max_candidates:
+                break
+            
+            id = str(getattr(result, "ref", ""))
+            if not id:
+                continue
+
+            title = getattr(result, "title", "")
+            license = getattr(result, "license_name", "")
+            total_bytes = getattr(result, "total_bytes", 0)
+
+            # Fetch Croissant export to get column names for hard rules (skip if cached)
+            field_names = fetch_croissant_fields(id)
