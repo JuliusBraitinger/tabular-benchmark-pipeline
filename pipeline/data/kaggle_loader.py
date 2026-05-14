@@ -45,14 +45,24 @@ CROISSANT_URL = "https://www.kaggle.com/datasets/{ref}/croissant/download"
 HTTP_TIMEOUT = 30
 NOT_TABULAR_KEYWORDS = ["image", "audio", "pictures","video", "text", "nlp", "language", "time series", "timeseries"]
 
-def looks_tabular(field_names: list[str], title: str): #check if dataset is tabular or image data
-    #heuristic to check if dataset is tabular
-    if NOT_TABULAR_KEYWORDS.search(title):
-        return False
+def looks_tabular(field_names: list[str], title: str) -> tuple[bool, str]:
+    """Heuristic: real tabular vs flattened images / NLP / audio.
+    Returns (True, "") on pass, (False, reason) on reject.
+    """
+    title_lc = title.lower()
+    for kw in NOT_TABULAR_KEYWORDS:
+        if kw in title_lc:
+            return False, f"title contains non-tabular keyword: {kw!r}"
+
     if not field_names:
-        return True
-    pixel_like = sum(1 for n in field_names if NOT_TABULAR_KEYWORDS.match(n))
-    return pixel_like / len(field_names) <= 0.5
+        return True, ""
+
+    # Pure-numeric column names (0, 1, 2, ...) or pixel-style indicate flattened data
+    pixel_like = sum(1 for n in field_names if re.match(r"^(pixel[_-]?\d+|\d+)$", n))
+    if pixel_like / len(field_names) > 0.5:
+        return False, f"{pixel_like}/{len(field_names)} cols look like pixel/numeric indices"
+
+    return True, ""
 
 
 def fetch(candidate: CandidateInfo):
