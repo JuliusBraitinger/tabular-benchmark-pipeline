@@ -51,13 +51,13 @@ def fetch(candidate:CandidateInfo):
         try:
             results = fetch_ucirepo(id)
         except Exception as e:
-            logger.info("UCI dataset fetch failed for id=%d: ", id e)
+            logger.info("UCI dataset fetch failed for id=%d: %s", id, e)
             return None
         
         X = results.data.features
-        y = results.targets
+        y = results.data.targets
 
-        if X is None and y is None:
+        if X is None or y is None:
             logger.info("UCI dataset id=%d has no data, skipping", id)
             return None
         
@@ -69,29 +69,29 @@ def fetch(candidate:CandidateInfo):
         y.to_frame().to_parquet(y_file)
         logger.info("UCI dataset id=%d downloaded and cached", id)
 
-        data_results = hard_rules.run_data_checks(X, y, candidate.task_type)
-        stats.record(candidate.id, "uci", candidate.name, data_results)
-        failed = hard_rules.failed_rules(data_results)
-        if failed:
-            logger.info("UCI dataset id=%d failed hard rules: %s", id, ", ".join(failed))
-            return None
-        task_type = hard_rules.inferred_task_type(data_results)
-        logger.info("UCI dataset id=%d inferred task type: %s", id, task_type)
+    data_results = hard_rules.run_data_checks(X, y, candidate.task_type)
+    stats.record(candidate.id, "uci", candidate.name, data_results)
+    failed = hard_rules.failed_rules(data_results)
+    if failed:
+        logger.info("UCI dataset id=%d failed hard rules: %s", id, ", ".join(f"{r.rule}: {r.reason}" for r in failed))
+        return None
+    task_type = hard_rules.inferred_task_type(data_results)
+    logger.info("UCI dataset id=%d inferred task type: %s", id, task_type)
 
-        return Dataset(
-            id=candidate.id,
-            source = "uci"
-            name=candidate.name,
-            X=X,
-            y=y,
-            task_type=task_type,
-            metadata = {
-                **candidate.metadata,
-                "license" : candidate.license,
-                "url" : candidate.url,
-            }
-        )
+    return Dataset(
+        id=candidate.id,
+        source = "uci",
+        name=candidate.name,
+        X=X,
+        y=y,
+        task_type=task_type,
+        metadata = {
+            **candidate.metadata,
+            "license" : candidate.licence,
+            "url" : candidate.url,
+        }
+    )
 
 
-def list_candidates(max_per_source: int = 50)
+def list_candidates(max_per_source: int = 50):
     return None
