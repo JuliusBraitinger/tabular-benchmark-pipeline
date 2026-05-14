@@ -43,8 +43,16 @@ logger = logging.getLogger(__name__)
 CACHE_DIR = Path("/tmp/kaggle_cache")
 CROISSANT_URL = "https://www.kaggle.com/datasets/{ref}/croissant/download"
 HTTP_TIMEOUT = 30
+NOT_TABULAR_KEYWORDS = ["image", "audio", "pictures","video", "text", "nlp", "language", "time series", "timeseries"]
 
-
+def looks_tabular(field_names: list[str], title: str): #check if dataset is tabular or image data
+    #heuristic to check if dataset is tabular
+    if NOT_TABULAR_KEYWORDS.search(title):
+        return False
+    if not field_names:
+        return True
+    pixel_like = sum(1 for n in field_names if NOT_TABULAR_KEYWORDS.match(n))
+    return pixel_like / len(field_names) <= 0.5
 
 
 def fetch(candidate: CandidateInfo):
@@ -218,7 +226,7 @@ def list_candidates(max_candidates: int = 50):
                 stats.record(id, "kaggle", title, [fail])
                 continue
 
-            is_tabular, reason = _looks_tabular(field_names, title)
+            is_tabular, reason = looks_tabular(field_names, title)
             if not is_tabular:
                 logger.info("    rejected: not tabular - %s", reason)
                 fail = RuleResult(rule="pre-filter", passed=False,
