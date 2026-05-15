@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import permutation_test_score
 from sklearn.preprocessing import LabelEncoder
@@ -30,6 +31,14 @@ CV_FOLDS = 3
 
 def check_data(X, y, task_type="classification", **_kwargs):
     """Permutation test: if p < 0.05, the data has real signal."""
+
+    # if task_type is unknown, infer it from y: non-numeric or few unique values
+    # -> classification (string labels like 'SITTING', 'WALKING' fall here)
+    if task_type == "unknown" or not task_type:
+        if not pd.api.types.is_numeric_dtype(y) or y.nunique() <= 20:
+            task_type = "classification"
+        else:
+            task_type = "regression"
 
     # pick the right model and metric based on task type
     if "classification" in task_type:
