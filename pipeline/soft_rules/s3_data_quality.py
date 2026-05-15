@@ -20,6 +20,9 @@ MAX_FEATURES_FOR_HEAVY_OPS = 1000
 
 
 def top_variable_columns(X, k=MAX_FEATURES_FOR_HEAVY_OPS):
+    # drop non-numeric columns (e.g. datetime strings like "2016-01-01 00:00:00")
+    # so to_numpy(dtype=float) doesn't crash on them
+    X = X.select_dtypes(include="number")
     if X.shape[1] <= k:
         return X
     # variance per column; all-NaN columns become -1 so they never get picked
@@ -29,7 +32,7 @@ def top_variable_columns(X, k=MAX_FEATURES_FOR_HEAVY_OPS):
     # indices of the k columns with the highest variance
     top_k_indices = np.argpartition(-column_variances, k)[:k]
 
-    return X.iloc[:, top_k_indices] 
+    return X.iloc[:, top_k_indices]
 
 # Sub-metric weights for the final S3 score.
 #  JUST A EDUCATED GUESS NEEDS IMPROVEMENT 
