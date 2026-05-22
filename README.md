@@ -1,11 +1,28 @@
 > **Status: work in progress.** This pipeline is under active development and
 >  contains bugs. It is not yet set up to run on the university's SLURM
-> cluster. verything here assumes a local environment. If you're using this
+> cluster. Everything here assumes a local environment. If you're using this
 > package, expect rough edges and interfaces that may still change.
 
 # Pipeline Architecture
 
 A visual overview of what each file does and how they work together.
+
+## Entry Point
+
+```bash
+python -m pipeline      # runs pipeline/__main__.py
+```
+
+`__main__.py` orchestrates the whole run in two phases. Datasets are streamed
+to disk between phases so RAM stays bounded to one dataset at a time.
+
+1. **Scrape + fetch** — `registry.list_candidates()` collects candidates from every
+   loader, then `registry.fetch()` downloads each survivor. Each fetched
+   `Dataset` is persisted under `data/datasets/{id}/` as `X.parquet`,
+   `y.parquet`, `meta.pkl` and immediately released from memory.
+2. **Soft rules** — every saved dataset is reloaded one at a time and scored
+   by S1–S6. Results land in `soft_stats.csv`. Hard-rule stats from phase 1
+   land in `rule_stats.csv`.
 
 ## File Map & Dependencies
 
@@ -25,28 +42,25 @@ A visual overview of what each file does and how they work together.
 │                                                                              │
 │   list_candidates()  ──▶ calls each loader's list_candidates()               │
 │   fetch(candidate)   ──▶ routes to the right loader's fetch()                │
-│   fetch_all(list)    ──▶ loops fetch() over many candidates                  │
+│   _LOADERS = {openml, tcga, geo_array, kaggle, uci}                          │
 └─────────────────────────────────────────────────────────────────────────────┘
-             │                        │                         │
-             ▼                        ▼                         ▼
-   ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────────┐
-   │ openml_loader.py │    │  tcga_loader.py  │    │ geo_array_loader.py  │
-   │                  │    │                  │    │                      │
-   │ • list_          │    │ • list_          │    │ • list_              │
-   │   candidates()   │    │   candidates()   │    │   candidates()       │
-   │ • fetch()        │    │ • fetch()        │    │ • fetch()            │
-   │                  │    │                  │    │ • _parse_geoparse_   │
-   │ Uses OpenML API  │    │ Uses GDC API     │    │   metadata()         │
-   │ (target already  │    │ (target = sample │    │                      │
-   │  defined)        │    │  type/vital)     │    │ Uses Entrez + GEO    │
-   │                  │    │                  │    │ parse (builds target │
-   │                  │    │                  │    │ from metadata text)  │
-   └──────────────────┘    └──────────────────┘    └──────────────────────┘
-             │                        │                         │
-             │ each loader calls hard_rules.runner twice:       │
-             │   1) run_metadata_checks() — cheap, before download
-             │   2) run_data_checks()     — expensive, after download
-             ▼                        ▼                         ▼
+        │              │              │              │              │
+        ▼              ▼              ▼              ▼              ▼
+ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐
+ │ openml_    │ │  tcga_     │ │ geo_array_ │ │  kaggle_   │ │   uci_     │
+ │ loader.py  │ │ loader.py  │ │ loader.py  │ │ loader.py  │ │ loader.py  │
+ │            │ │            │ │            │ │            │ │            │
+ │ OpenML API │ │  GDC API   │ │ Entrez +   │ │ Kaggle API │ │ ucimlrepo  │
+ │ (target    │ │ (target =  │ │ GEOparse   │ │ +Croissant │ │ package    │
+ │  already   │ │  sample    │ │ (builds    │ │ (heuristic │ │            │
+ │  defined)  │ │  type /    │ │  target    │ │  target    │ │            │
+ │            │ │  vital)    │ │  from text)│ │  detection)│ │            │
+ └────────────┘ └────────────┘ └────────────┘ └────────────┘ └────────────┘
+        │              │              │              │              │
+        │ each loader calls hard_rules.runner twice:                │
+        │   1) run_metadata_checks() — cheap, before download       │
+        │   2) run_data_checks()     — expensive, after download    │
+        ▼                                                           ▼
    ┌─────────────────────────────────────────────────────────────────────┐
    │                  pipeline/hard_rules/runner.py                       │
    │                     ═══ RULE ORCHESTRATOR ═══                        │
@@ -58,19 +72,20 @@ A visual overview of what each file does and how they work together.
    │   run_data_checks(X, y, ...)    → loops and calls each rule          │
    │   all_passed() / failed_rules() → helpers for checking results       │
    └─────────────────────────────────────────────────────────────────────┘
-            │         │          │          │          │
-            ▼         ▼          ▼          ▼          ▼
-      ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
-      │  a1_    │ │  a2_    │ │  a3_    │ │  a5_    │ │  a6_    │
-      │ task_   │ │synthetic│ │ signal  │ │dimension│ │ licence │
-      │ type.py │ │  .py    │ │  .py    │ │  .py    │ │  .py    │
-      │         │ │         │ │         │ │         │ │         │
-      │ classif │ │ MOCKUP  │ │ MOCKUP  │ │ N ≥1000 │ │ open    │
-      │ /regr?  │ │ (stub)  │ │ (stub)  │ │ P≥10000 │ │ licence?│
-      │         │ │         │ │         │ │ both!   │ │         │
-      │ meta +  │ │ meta    │ │ data    │ │ meta +  │ │ meta    │
-      │ data    │ │ only    │ │ only    │ │ data    │ │ only    │
-      └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘
+        │         │          │          │          │
+        ▼         ▼          ▼          ▼          ▼
+   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
+   │  a1_    │ │  a2_    │ │  a3_    │ │  a5_    │ │  a6_    │
+   │ task_   │ │synthetic│ │ signal  │ │dimension│ │ licence │
+   │ type.py │ │  .py    │ │  .py    │ │  .py    │ │  .py    │
+   │         │ │         │ │         │ │         │ │         │
+   │ classif │ │ regex + │ │permutat-│ │ N ≥1000 │ │ open    │
+   │ /regr?  │ │ TCGA/   │ │ ion RF  │ │ P≥10000 │ │ licence?│
+   │         │ │ GEO     │ │ +TabPFN │ │ both!   │ │         │
+   │ meta +  │ │ auto-   │ │  ↓      │ │         │ │         │
+   │ data    │ │ pass    │ │data only│ │ meta+   │ │ meta    │
+   └─────────┘ └─────────┘ └─────────┘ │ data    │ │ only    │
+                                       └─────────┘ └─────────┘
                                                  │
                                                  ▼  (returns RuleResult)
                                       ┌──────────────────────┐
@@ -89,51 +104,111 @@ A visual overview of what each file does and how they work together.
    └─────────────────────────────────────────────────────────────────────┘
 ```
 
+After phase 1 every surviving dataset lives on disk. Phase 2 reloads them
+one at a time and runs the soft rules:
+
+```
+   ┌─────────────────────────────────────────────────────────────────────┐
+   │                pipeline/soft_rules/ (called by __main__)             │
+   │                                                                      │
+   │   Each rule exposes: score(dataset, ...) → SoftRuleResult            │
+   │   SoftRuleResult(rule, score in [0,1], details dict)                 │
+   └─────────────────────────────────────────────────────────────────────┘
+        │         │          │          │          │          │
+        ▼         ▼          ▼          ▼          ▼          ▼
+   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
+   │   S1    │ │   S2    │ │   S3    │ │   S4    │ │   S5    │ │   S6    │
+   │ unique  │ │  IID    │ │ quality │ │ leakage │ │ batch   │ │ class   │
+   │ -ness   │ │         │ │         │ │         │ │ effects │ │ balance │
+   │         │ │         │ │         │ │         │ │         │ │         │
+   │ stat    │ │ exact   │ │ miss /  │ │ TODO    │ │   TODO  │ │shannon  │
+   │ finger- │ │duplicate│ │ const / │ │         │ │         │ │entropy  │
+   │ print + │ │ rows on │ │ outliers│ │         │ │         │ │         │
+   │ cosine  │ │ (X | y) │ │ consist │ │         │ │         │ │         │
+   │ vs pool │ │  hashing│ │         │ │         │ │         │ │         │
+   └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘
+                                                                    │
+                                                                    ▼
+                                                    ┌──────────────────────┐
+                                                    │   soft_stats.py      │
+                                                    │ • record(ds, results)│
+                                                    │ • save_csv()         │
+                                                    │  → soft_stats.csv    │
+                                                    └──────────────────────┘
+```
+
+S1 is a special case — it needs the pool of all fingerprints, so `__main__`
+pre-computes them once before the per-dataset loop. The other rules are
+pool-free and run in the same loop.
+
 ## End-to-End Flow
 
 ```
-   registry.list_candidates()
+   registry.list_candidates(sources=[…])
            │
-           ├─▶ openml_loader.list_candidates() ──┐
-           ├─▶ tcga_loader.list_candidates()  ───┤── each runs metadata
-           └─▶ geo_loader.list_candidates()   ───┘    hard rules
+           ├─▶ openml_loader.list_candidates() ─┐
+           ├─▶ tcga_loader.list_candidates()   ─┤
+           ├─▶ geo_loader.list_candidates()    ─┼─ each runs metadata
+           ├─▶ kaggle_loader.list_candidates() ─┤    hard rules
+           └─▶ uci_loader.list_candidates()    ─┘
                               │
                               ▼
                 [list of CandidateInfo objects]
                               │
                               ▼
-              registry.fetch_all(candidates)
-                              │
-                              ├─▶ downloads actual data
-                              ├─▶ runs DATA-level hard rules (A3, A5)
-                              └─▶ drops failures
-                              │
-                              ▼
-                    [list of Dataset objects]
+              for candidate in candidates:
+                  ds = registry.fetch(candidate)   # runs data hard rules
+                  if ds is None: continue
+                  save(ds → data/datasets/{id}/)   # parquet + pickle
+                  del ds                            # free RAM
                               │
                               ▼
-              (next: soft rules + CRITIC scoring)
+              [data/datasets/ now contains every passing dataset]
+                              │
+                              ▼
+              for each saved dataset:
+                  ds = load_from_disk(ds_dir)
+                  run S1, S2, S3, S4, S5, S6 → soft_stats.csv
 ```
 
 ## Key Patterns
 
 - **Dispatcher pattern** — `registry.py` routes calls based on the `source` string. Adding a new data source = adding one entry to the `_LOADERS` dict.
 - **Two-phase validation** — cheap metadata checks first, expensive data checks only on survivors.
+- **Streaming save** — each fetched dataset is written to disk and dropped from memory before the next one is fetched, so RAM is bounded regardless of cohort size.
 - **Registry pattern (for rules)** — `runner.py` keeps a list of rule functions and loops over them. Adding a new rule = adding one line.
 - **Protocol-based loaders** — every loader must expose `list_candidates()` + `fetch()`. That's what makes the dispatcher work.
+- **Continuous scores** — soft rules return `score ∈ [0, 1]` (1 = clean); tiers (0/10/20/…/100) are only for human-readable display.
 
-## Currently Mocked Rules
+## Soft Rule Status
 
-| Rule | Status | Purpose |
-|------|--------|---------|
-| A2   | Stub (always passes) | Detect synthetic/artificial datasets |
-| A3   | Stub (always passes) | Verify predictive signal via RandomForest CV |
+| Rule | Points | Implementation |
+|------|--------|----------------|
+| S1 Uniqueness     | 10 | per-column moment fingerprint (mean/std/skew/kurt) → cosine vs pool |
+| S2 IID            | 10 | strict exact-duplicate rows on `(X | y)` via row hashing |
+| S3 Data Quality   | 15 | composite: completeness, consistency, outliers (IF), constant features |
+| S4 Data Leakage   | 20 | **TODO** — group k-fold + MI spike + dist shift |
+| S5 Batch Effects  |  – | **DROPPED** — no reliable automated detection method |
+| S6 Class Balance  |  5 | normalized Shannon entropy of class distribution |
+| S7 Domain-QC      |  – | **DEFERRED** — too domain-specific to automate generically |
 
-Real implementations are planned — the stubs keep the runner working without failing datasets.
+S2's duplicate detection used to live inside S3 as a "uniqueness" sub-metric
+but was moved out — duplicates are an IID-assumption violation, not a data
+cleanliness signal, and keeping them in both rules would double-count.
+
+## Hard Rule Status
+
+| Rule | Status |
+|------|--------|
+| A1 Task type        | implemented (classification/regression, infers from target if unknown) |
+| A2 Synthetic check  | implemented (regex on name/tags; TCGA + GEO auto-pass) |
+| A3 Signal           | implemented (permutation RF; TabPFN flag for *too-easy* signals planned) |
+| A5 Dimensions       | implemented (N ≥ MIN_ROWS, P ≥ MIN_FEATURES; both metadata and data checks) |
+| A6 Licence          | implemented (normalises string, rejects NC/ND, allow-list) |
 
 ## Testing
 
-Quick smoke test for any loader — runs `list_candidates` against the real API and stops after the first candidate that passes metadata hard rules. Swap `tcga_loader` for `openml_loader` or `geo_array_loader` to test the others.
+Quick smoke test for any loader — runs `list_candidates` against the real API and stops after the first candidate that passes metadata hard rules. Swap `tcga_loader` for `openml_loader`, `geo_array_loader`, `kaggle_loader`, or `uci_loader` to test the others.
 
 ```bash
 python -c "
@@ -167,3 +242,20 @@ print(ds.X.shape, ds.y.shape, ds.task_type)
 ```
 
 This downloads the full feature matrix, so for a large TCGA project it's hundreds of files — use sparingly.
+
+### Running soft rules on already-saved datasets
+
+If `data/datasets/` already contains datasets from a previous run, you can
+re-score them without refetching. `__main__._load_dataset` already does the
+parquet + pickle boilerplate, and `rglob("X.parquet")` walks any depth so
+kaggle's two-level `{owner}/{slug}/` layout works the same as everything else:
+
+```python
+from pathlib import Path
+from pipeline.__main__ import _load_dataset
+from pipeline.soft_rules import s2_iid
+
+for x_path in Path("data/datasets").rglob("X.parquet"):
+    ds = _load_dataset(x_path.parent)
+    print(ds.id, s2_iid.score(ds).score)
+```
