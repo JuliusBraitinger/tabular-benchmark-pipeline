@@ -188,9 +188,9 @@ pool-free and run in the same loop.
 | S2 IID            | 10 | strict exact-duplicate rows on `(X | y)` via row hashing |
 | S3 Data Quality   | 15 | composite: completeness, consistency, outliers (IF), constant features |
 | S4 Data Leakage   | 20 | **TODO** — group k-fold + MI spike + dist shift |
-| S5 Batch Effects  |  – | **DROPPED** — no reliable automated detection method |
+| S5 Batch Effects  |  – | **TODO** — no reliable automated detection method |
 | S6 Class Balance  |  5 | normalized Shannon entropy of class distribution |
-| S7 Domain-QC      |  – | **DEFERRED** — too domain-specific to automate generically |
+| S7 Domain-QC      |  – | **TODO** — too domain-specific to automate generically |
 
 S2's duplicate detection used to live inside S3 as a "uniqueness" sub-metric
 but was moved out — duplicates are an IID-assumption violation, not a data
