@@ -19,8 +19,9 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.model_selection import permutation_test_score
+from sklearn.model_selection import cross_val_score, permutation_test_score
 from sklearn.preprocessing import LabelEncoder
+from tabpfn import TabPFNClassifier, TabPFNRegressor
 
 from pipeline.hard_rules.base import RuleResult
 
@@ -37,6 +38,8 @@ N_PERMUTATIONS = 100
 N_ESTIMATORS = 50
 MAX_DEPTH = 5
 CV_FOLDS = 3
+# TabPFN-2 limits (used to confirm trivial-signal verdicts from the RF)
+TABPFN_MAX_FEATURES = 500
 
 
 
@@ -109,7 +112,8 @@ def check_data(X, y, task_type="classification", **_kwargs):
         min_score = MIN_REG_SCORE
         max_score = MAX_REG_SCORE
 
-    # three checks, in order: signal must be real, strong enough, but not trivial
+    # checks in order: signal must be real, strong enough, but not trivial
+    tabpfn_score = None
     if p_value >= P_VALUE_THRESHOLD:
         passed = False
         reason = f"no signal (p={p_value:.3f}, score={real_score:.3f})"
@@ -117,11 +121,18 @@ def check_data(X, y, task_type="classification", **_kwargs):
         passed = False
         reason = f"signal too weak ({scoring}={real_score:.3f} < {min_score})"
     elif real_score > max_score:
-        passed = False
-        reason = f"signal too strong / likely trivial ({scoring}={real_score:.3f} > {max_score})"
+        # Tabpfn is exepensive -> only run it if RF has trivial signal
+        tabpfn_score = tabpfn_score(X, y, task_type, scoring)
+        if tabpfn_score > max_score:
+            passed = False
+            reason = f"trivial: RF={real_score:.3f}, TabPFN={tabpfn_score:.3f} both > {max_score}"
+        else:
+            # RF found it easy but TabPFN didn't -- probably RF-specific, keep dataset
+            passed = True
+            reason = "not trivial"
     else:
         passed = True
-        reason = ""
+        reason = "not trivial and not too weak"
 
     return RuleResult(
         rule="A3",
@@ -132,5 +143,22 @@ def check_data(X, y, task_type="classification", **_kwargs):
             "real_score": real_score,
             "min_score": min_score,
             "max_score": max_score,
+            "tabpfn_score": tabpfn_score,
         },
     )
+
+
+def tabpfn_score(X, y, task_type, scoring):
+
+    #TODO maybe include tabpfnwide?
+    if X.shape[1] > TABPFN_MAX_FEATURES:
+        var_arr = np.nanvar(X.values, axis=0)
+        top_idx = np.argpartition(-var_arr, TABPFN_MAX_FEATURES)[:TABPFN_MAX_FEATURES]
+        X = X.iloc[:, top_idx]
+
+    if "classification" in task_type:
+        model = TabPFNClassifier()
+    else:
+        model = TabPFNRegressor()
+        scores = cross_val_score(model, X, y, scoring=scoring, cv=CV_FOLDS)
+        return float(scores.mean())
