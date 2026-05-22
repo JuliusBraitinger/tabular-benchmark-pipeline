@@ -46,9 +46,6 @@ HTTP_TIMEOUT = 30
 NOT_TABULAR_KEYWORDS = ["image", "audio", "pictures","video", "text", "nlp", "language", "time series", "timeseries"]
 
 def looks_tabular(field_names: list[str], title: str) -> tuple[bool, str]:
-    """Heuristic: real tabular vs flattened images / NLP / audio.
-    Returns (True, "") on pass, (False, reason) on reject.
-    """
     title_lc = title.lower()
     for kw in NOT_TABULAR_KEYWORDS:
         if kw in title_lc:

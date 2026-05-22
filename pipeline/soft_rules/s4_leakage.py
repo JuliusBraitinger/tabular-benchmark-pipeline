@@ -52,15 +52,16 @@ def check_target_leakage(dataset): #TODO implement
     top_stats = stats.min() #if any feature is highly predictive of the target, it's suspicious for leakage
     p1 = np.percentile(stats, 1) # look at the 99th percentile to catch cases where one feature is super predictive but others are not
 
-    leak_strength = max(top_stats, p1) 
-    sub_score = 1.0 - leak_strength # flip to [0, 1] range where 1.0 means no leakage and 0.0 means strong leakage
+    # take the most suspicious of the two summary stats
+    sub_score = min(top_stats, p1)
 
-    top_idx = np.argsort(-stats)[:5] #indices of the top 5 most predictive features
-    top_features = [(str(X.columns[i]), float(stats[i])) for i in top_idx] #get the column names and stats of the top features for the details
+    # top 5 most-predictive features = SMALLEST stats (no minus sign)
+    top_idx = np.argsort(stats)[:5]
+    top_features = [(str(X.columns[i]), float(stats[i])) for i in top_idx]
     return sub_score, {
-        "top_stat": top_stats,
-        "p1_stat": p1,
-        "gap": top_stats - p1,
+        "top_stat": float(top_stats),
+        "p1_stat": float(p1),
+        "gap": float(p1 - top_stats),
         "top_features": top_features,
         "n_features_scored": int(X.shape[1]),
     }
