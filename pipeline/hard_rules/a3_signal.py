@@ -122,7 +122,7 @@ def check_data(X, y, task_type="classification", **_kwargs):
         reason = f"signal too weak ({scoring}={real_score:.3f} < {min_score})"
     elif real_score > max_score:
         # Tabpfn is exepensive -> only run it if RF has trivial signal
-        tabpfn_score = tabpfn_score(X, y, task_type, scoring)
+        tabpfn_score = tabpfn_scorer(X, y, task_type, scoring)
         if tabpfn_score > max_score:
             passed = False
             reason = f"trivial: RF={real_score:.3f}, TabPFN={tabpfn_score:.3f} both > {max_score}"
@@ -148,7 +148,7 @@ def check_data(X, y, task_type="classification", **_kwargs):
     )
 
 
-def tabpfn_score(X, y, task_type, scoring):
+def tabpfn_scorer(X, y, task_type, scoring):
 
     #TODO maybe include tabpfnwide?
     if X.shape[1] > TABPFN_MAX_FEATURES:
@@ -160,5 +160,5 @@ def tabpfn_score(X, y, task_type, scoring):
         model = TabPFNClassifier()
     else:
         model = TabPFNRegressor()
-        scores = cross_val_score(model, X, y, scoring=scoring, cv=CV_FOLDS)
-        return float(scores.mean())
+    scores = cross_val_score(model, X, y, scoring=scoring, cv=CV_FOLDS)
+    return float(scores.mean())
