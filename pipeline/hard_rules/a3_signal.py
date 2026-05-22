@@ -11,6 +11,9 @@
 #
 # for classification  use AUC as metric, for regression R2
 # sklearn already permutation_test_score
+
+
+#TODO implement tappfn 2 um zu schauen ob das Signal ZU GUT ist -> dann flaggen bzw. wegschmeißen 
 from __future__ import annotations
 
 import numpy as np
@@ -21,7 +24,15 @@ from sklearn.preprocessing import LabelEncoder
 
 from pipeline.hard_rules.base import RuleResult
 
-P_VALUE_THRESHOLD = 0.05 #actually dont know the correct values just cheking like that 
+P_VALUE_THRESHOLD = 0.05  # signal must be statistically distinguishable from random
+# absolute-score floor: a dataset with p<0.05 but balanced_acc=0.16 (well above
+# random for many-class problems) still fails downstream sanity. Require both gates to keep
+# A3 aligned with the benchmark's actual usability bar.
+MIN_CLF_SCORE = 0.55
+MIN_REG_SCORE = 0.05
+# dataset that scores near-perfect score -> reject it.
+MAX_CLF_SCORE = 0.98
+MAX_REG_SCORE = 0.98
 N_PERMUTATIONS = 100
 N_ESTIMATORS = 50
 MAX_DEPTH = 5
@@ -90,10 +101,36 @@ def check_data(X, y, task_type="classification", **_kwargs):
     real_score = results[0]  # how well the model did on real labels
     p_value = results[2]     # fraction of shuffled runs that beat the real score
 
-    passed = p_value < P_VALUE_THRESHOLD
+    # pick the thresholds: classification uses balanced_acc, regression uses R2
+    if "classiciaction" in task_type:
+        min_score = MIN_CLF_SCORE
+        max_score = MAX_CLF_SCORE
+    else:
+        min_score = MIN_REG_SCORE
+        max_score = MAX_REG_SCORE
+
+    # three checks, in order: signal must be real, strong enough, but not trivial
+    if p_value <= P_VALUE_THRESHOLD:
+        passed = False
+        reason = f"no signal (p={p_value:.3f}, score={real_score:.3f})"
+    elif real_score < min_score:
+        passed = False
+        reason = f"signal too weak ({scoring}={real_score:.3f} > {min_score})"
+    elif real_score > max_score:
+        passed = False
+        reason = f"signal too strong / likely trivial ({scoring}={real_score:.3f} < {max_score})"
+    else:
+        passed = True
+        reason = ""
+
     return RuleResult(
         rule="A3",
         passed=passed,
-        reason="" if passed else f"no signal detected (p={p_value:.3f}, score={real_score:.3f})",
-        details={"p_value": float(p_value), "real_score": float(real_score)},
+        reason=reason,
+        details={
+            "p_value": p_value,
+            "real_score": real_score,
+            "min_score": min_score,
+            "max_score": max_score,
+        },
     )
