@@ -1,6 +1,10 @@
 # S1 Uniqueness (10 points)
 # statistical fingerprint: per-column mean+std+skew+kurtosis
-# reference: pymfe paper (Alcobaca et al., 2020)
+# inspired by the statistical meta-feature group of pymfe
+# (Alcobaça et al., 2020, "MFE: Towards reproducible meta-feature extraction", JMLR 21:111).
+# we do not call pymfe directly; we re-use the concept of summarizing per-column
+# moments into a fixed-length fingerprint, but the specific 28-dim vector
+# and cosine-similarity scoring are our own.
 
 import numpy as np
 from scipy import stats as scipy_stats
