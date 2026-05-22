@@ -27,6 +27,13 @@ def find_duplicates(dataset):
         "duplicate_fraction": n_duplicates_rows / n_rows if n_rows else 0.0,
     }
 
+ 
 
 def score(dataset, pool=None):
-    return SoftRuleResult(rule="S2", score=1.0, details=None)
+    duplicate_info =find_duplicates(dataset)
+    return SoftRuleResult(
+        rule = "S2",
+        score= 1.0 - duplicate_info["duplicate_fraction"],
+        details=duplicate_info,
+    )
+ 
