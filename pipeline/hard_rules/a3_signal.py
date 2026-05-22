@@ -102,7 +102,7 @@ def check_data(X, y, task_type="classification", **_kwargs):
     p_value = results[2]     # fraction of shuffled runs that beat the real score
 
     # pick the thresholds: classification uses balanced_acc, regression uses R2
-    if "classiciaction" in task_type:
+    if "classification" in task_type:
         min_score = MIN_CLF_SCORE
         max_score = MAX_CLF_SCORE
     else:
@@ -110,15 +110,15 @@ def check_data(X, y, task_type="classification", **_kwargs):
         max_score = MAX_REG_SCORE
 
     # three checks, in order: signal must be real, strong enough, but not trivial
-    if p_value <= P_VALUE_THRESHOLD:
+    if p_value >= P_VALUE_THRESHOLD:
         passed = False
         reason = f"no signal (p={p_value:.3f}, score={real_score:.3f})"
     elif real_score < min_score:
         passed = False
-        reason = f"signal too weak ({scoring}={real_score:.3f} > {min_score})"
+        reason = f"signal too weak ({scoring}={real_score:.3f} < {min_score})"
     elif real_score > max_score:
         passed = False
-        reason = f"signal too strong / likely trivial ({scoring}={real_score:.3f} < {max_score})"
+        reason = f"signal too strong / likely trivial ({scoring}={real_score:.3f} > {max_score})"
     else:
         passed = True
         reason = ""
