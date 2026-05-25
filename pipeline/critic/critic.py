@@ -80,5 +80,6 @@ def run_critic(score_matrix):
         ))
     return results
 
+#final weights for each rule to be used in the final scoring of datasets, based on the CRITIC method results.
 def final_weights(critic_results):
     return {r.rule: r.final_score for r in critic_results}
