@@ -25,6 +25,12 @@ data/
 !kaggle_loader.py
 !uci_loader.py
 
+#scripts
+scripts/
+
+#sanitycheck
+sanity_check.py
+
 # Logs
 *.log
 
