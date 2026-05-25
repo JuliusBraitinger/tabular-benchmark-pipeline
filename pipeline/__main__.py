@@ -23,6 +23,7 @@ from pipeline.soft_rules import s6_class_balance as s6
 
 
 OUTPUT_DIR = Path("data/datasets")
+MAX_SAVED_DATASETS = 30  # stop fetching once this many datasets pass ALL hard rules
 
 
 def _save_dataset(ds: Dataset, output_dir: Path) -> Path:
@@ -62,7 +63,8 @@ def main() -> None:
 
     # Phase 1: scrape candidates (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
-    candidates = registry.list_candidates(sources=["geo_array"], max_per_source=50)
+    candidates = registry.list_candidates(sources=["kaggle"], max_per_source=30)
+    
     log.info("Got %d candidates", len(candidates))
 
     # Phase 2: fetch each dataset, save to disk, then drop from memory.
@@ -84,6 +86,10 @@ def main() -> None:
         log.info("  saved %s: X=%s task=%s", ds.id, ds.X.shape, ds.task_type)
         saved_dirs.append(ds_dir)
         del ds  # release memory before fetching the next candidate
+
+        if len(saved_dirs) >= MAX_SAVED_DATASETS:
+            log.info("Reached MAX_SAVED_DATASETS=%d, stopping fetch loop", MAX_SAVED_DATASETS)
+            break
 
     stats.save_csv("rule_stats.csv")
     log.info("%d datasets saved to %s. Saved rule_stats.csv.", len(saved_dirs), OUTPUT_DIR)

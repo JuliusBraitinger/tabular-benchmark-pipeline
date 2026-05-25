@@ -80,3 +80,5 @@ def run_critic(score_matrix):
         ))
     return results
 
+def final_weights(critic_results):
+    return {r.rule: r.final_score for r in critic_results}

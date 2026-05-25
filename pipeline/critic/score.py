@@ -6,13 +6,10 @@ import pandas as pd
 from pipeline.config import TOTAL_POINTS, PASS_THRESHOLD
 
 
-def compute_critic_scores(score_matrix, critic_results): #combines score from each rule with critic weights 
-    final_weights = {r.rule: r.final_score for r in critic_results} #list of results from critic 
-
-    composite = sum(
-        score_matrix[rule] * weight
-        for rule, weight in final_weights.items()
-    )
+def compute_critic_scores(score_matrix, weights):
+    #combine per rule score with critic weights to get composite score per dataset
+    #score_matrix is a dataframe indexed by dataset_id, with one column per rule
+    composite = sum(score_matrix[rule] * w for rule, w in weights.items())
 
     result = pd.DataFrame({
         "composite_score": composite,
