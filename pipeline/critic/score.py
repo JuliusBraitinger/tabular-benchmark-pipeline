@@ -7,7 +7,7 @@ from pipeline.config import TOTAL_POINTS, PASS_THRESHOLD
 
 
 def compute_critic_scores(score_matrix, critic_results): #combines score from each rule with critic weights 
-    final_weights = {r.rule: r.critic_score for r in critic_results}
+    final_weights = {r.rule: r.final_score for r in critic_results} #list of results from critic 
 
     composite = sum(
         score_matrix[rule] * weight
@@ -18,6 +18,6 @@ def compute_critic_scores(score_matrix, critic_results): #combines score from ea
         "composite_score": composite,
         "composite_fraction": composite / TOTAL_POINTS,
     })
-    result["passed"] = result["composite_fraction"] > PASS_THRESHOLD
+    result["passed"] = result["composite_fraction"] >= PASS_THRESHOLD
 
-    return result.sort_values("composite_score")
+    return result.sort_values("composite_score", ascending=False)
