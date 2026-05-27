@@ -21,10 +21,10 @@ class CRITICResults: #this gives a structured way to store the results of the CR
 def run_critic(score_matrix):
     rules = ["S1", "S2", "S3", "S4", "S6"]
 
-    sub = score_matrix[rules].dropna()
-    informative = [r for r in rules if sub[r].std() > 1e-9]
+    sub = score_matrix[rules].dropna() # drop datasets with NaN in any rule (e.g. S6 is NaN for regression)
+    informative = [r for r in rules if sub[r].std() > 1e-9] # rules with variance; constants carry no CRITIC signal
 
-    if len(informative) < 2:
+    if len(informative) < 2: #if there are fewer than 2 informative rules, can't really apply the CRITIC method, so just return the AHP scores and mark everything as "AGREE"
         results = []
         for rule in rules:
             ahp = AHP_WEIGHTS.get(rule, 0)
@@ -54,13 +54,13 @@ def run_critic(score_matrix):
     informativeness = standard_deviation * conflicts
 
     total_info = informativeness.sum()
-    critic_weights = pd.Series(0.0, index=rules)
-    critic_weights.loc[informative] = informativeness / total_info
+    critic_weights = pd.Series(0.0, index=rules) # start every rule at 0
+    critic_weights.loc[informative] = informativeness / total_info #only informative rules get a real weight; degenerates stay at 0
 
     critic_scores = {rule: int(round(critic_weights[rule] * TOTAL_POINTS)) for rule in rules}
     point_diff = TOTAL_POINTS - sum(critic_scores.values())
     if point_diff != 0:
-        max_rule = informative[0]
+        max_rule = informative[0] # rounding leftover lands on the biggest informative rule, never on a degenerate one
         for rule in informative:
             if critic_weights[rule] > critic_weights[max_rule]:
                 max_rule = rule
@@ -76,7 +76,7 @@ def run_critic(score_matrix):
             final = ahp_points if verdict == "AGREE" else crit_points
             stdv = float(standard_deviation[rule])
             info_val = float(informativeness[rule])
-        else:
+        else: # degenerate rule: no CRITIC signal, fall back to AHP
             verdict = "AGREE"
             final = ahp_points
             stdv = 0.0
