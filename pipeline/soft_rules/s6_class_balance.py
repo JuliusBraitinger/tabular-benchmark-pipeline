@@ -5,9 +5,14 @@ import numpy as np
 from pipeline.soft_rules.base import SoftRuleResult
 
 def score(dataset):
-    if "classifcation_target" not in dataset.data.columns:
-        return SoftRuleResult(rule="S6", score=0.0, details={"reason": "No classification target"})
-    
+    # "classification" matches both "classification" and "supervised_classification"
+    if "classification" not in dataset.task_type:
+        return SoftRuleResult(
+            rule="S6",
+            score=float("nan"),
+            details={"skipped": "non-classification task", "task_type": dataset.task_type},
+        )
+
     y = dataset.y
     counts = y.value_counts()
     k = len(counts)
@@ -19,4 +24,8 @@ def score(dataset):
     entropy = -np.sum(proportions * np.log(proportions))
     balance = entropy / np.log(k)
 
-    return SoftRuleResult(rule="S6", score=balance, details={"k": k, "entropy": entropy})
+    return SoftRuleResult(
+        rule="S6",
+        score=float(balance),
+        details={"k": int(k), "entropy": float(entropy)},
+    )

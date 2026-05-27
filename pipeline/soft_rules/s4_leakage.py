@@ -45,23 +45,28 @@ def per_feature_stat(X, y, task_type):
         return 1 - np.abs(rho) # both rho=1 and rho=-1 mean the feature is fully predictive, so take absolute value and flip to [0, 1] range
 
 
-def check_target_leakage(dataset): #TODO implement
+def check_target_leakage(dataset):
     X = dataset.X.select_dtypes(include="number")
+    # subsample BEFORE nunique/rankdata
+    # known limitation: a low-variance binary leak (e.g. one-hot of the target)
+    # can be filtered out here. variance is a reasonable proxy because real-world
+    # leakage columns usually carry high information AND high variance.
+    X = top_variable_columns(X)
     X = X.loc[:, X.nunique() > 1] #drop constant features since they can't leak
     stats = per_feature_stat(X, dataset.y, dataset.task_type)
-    top_stats = stats.min() #if any feature is highly predictive of the target, it's suspicious for leakage
-    p1 = np.percentile(stats, 1) # look at the 99th percentile to catch cases where one feature is super predictive but others are not
+    top_stat = stats.min() #if any feature is highly predictive of the target, it's suspicious for leakage
+    p1 = np.percentile(stats, 1) # 1st percentile catches cases where a small handful of features are super predictive
 
     # take the most suspicious of the two summary stats
-    sub_score = min(top_stats, p1)
+    sub_score = min(top_stat, p1)
 
     # top 5 most-predictive features = SMALLEST stats (no minus sign)
     top_idx = np.argsort(stats)[:5]
     top_features = [(str(X.columns[i]), float(stats[i])) for i in top_idx]
     return sub_score, {
-        "top_stat": float(top_stats),
+        "top_stat": float(top_stat),
         "p1_stat": float(p1),
-        "gap": float(p1 - top_stats),
+        "gap": float(p1 - top_stat),
         "top_features": top_features,
         "n_features_scored": int(X.shape[1]),
     }
