@@ -67,7 +67,7 @@ def check_target_leakage(dataset): #TODO implement
     }
 
 def score(dataset, pool=None):
-    score, details = check_target_leakage(dataset)
-    return SoftRuleResult(rule="S4", score = score, details={"score": score, "details": details})
+    sub_score, details = check_target_leakage(dataset)
+    return SoftRuleResult(rule="S4", score = float(sub_score), details= details)
 
     #TODO implement group k-fold test for group leakage 

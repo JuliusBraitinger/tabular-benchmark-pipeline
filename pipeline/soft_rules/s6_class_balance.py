@@ -5,6 +5,9 @@ import numpy as np
 from pipeline.soft_rules.base import SoftRuleResult
 
 def score(dataset):
+    if "classifcation_target" not in dataset.data.columns:
+        return SoftRuleResult(rule="S6", score=0.0, details={"reason": "No classification target"})
+    
     y = dataset.y
     counts = y.value_counts()
     k = len(counts)
