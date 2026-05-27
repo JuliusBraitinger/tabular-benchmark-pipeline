@@ -18,7 +18,7 @@ def per_feature_stat(X, y, task_type):
     array = np.where(np.isnan(array), col_means, array)
     ranks_x = rankdata(array, axis=0)
 
-    if task_type == "classification":
+    if "classification" in task_type:
         y_array = np.asarray(y)
         classes, counts = np.unique(y_array, return_counts=True)
         # most frequent class vs rest (one-vs-rest with majority as positive)
@@ -35,7 +35,7 @@ def per_feature_stat(X, y, task_type):
         return 2 * np.minimum(auc, 1 - auc)
 
     # toDO regression
-    if task_type == "regression":
+    if "regression" in task_type:
         ranks_y = rankdata(np.asarray(y, dtype=float))
         x_centered = ranks_x - ranks_x.mean(axis=0)
         y_centered = ranks_y - ranks_y.mean()
