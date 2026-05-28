@@ -54,19 +54,22 @@ def check_target_leakage(dataset):
     X = top_variable_columns(X)
     X = X.loc[:, X.nunique() > 1] #drop constant features since they can't leak
     stats = per_feature_stat(X, dataset.y, dataset.task_type)
-    top_stat = stats.min() #if any feature is highly predictive of the target, it's suspicious for leakage
-    p1 = np.percentile(stats, 1) # 1st percentile catches cases where a small handful of features are super predictive
+    top_stat = float(stats.min())          # worst (most predictive) feature; 0 = perfectly predictive
+    median_stat = float(np.median(stats))  # what a typical feature looks like
 
-    # take the most suspicious of the two summary stats
-    sub_score = min(top_stat, p1)
+    # gap measures how much the top sticks out from the bulk.
+    # leakage  -> top way more predictive than the median (big gap) -> low score.
+    # biology  -> top predictive but median is also low (lots of signal) -> small gap -> higher score.
+    gap = median_stat - top_stat
+    sub_score = max(0.0, 1.0 - gap)
 
     # top 5 most-predictive features = SMALLEST stats (no minus sign)
     top_idx = np.argsort(stats)[:5]
     top_features = [(str(X.columns[i]), float(stats[i])) for i in top_idx]
     return sub_score, {
-        "top_stat": float(top_stat),
-        "p1_stat": float(p1),
-        "gap": float(p1 - top_stat),
+        "top_stat": top_stat,
+        "median_stat": median_stat,
+        "gap": gap,
         "top_features": top_features,
         "n_features_scored": int(X.shape[1]),
     }

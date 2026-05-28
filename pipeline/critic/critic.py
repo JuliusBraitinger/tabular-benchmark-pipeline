@@ -21,7 +21,10 @@ class CRITICResults: #this gives a structured way to store the results of the CR
 def run_critic(score_matrix):
     rules = ["S1", "S2", "S3", "S4", "S6"]
 
-    sub = score_matrix[rules].dropna() # drop datasets with NaN in any rule (e.g. S6 is NaN for regression)
+    # impute NaN cells with column medians instead of dropping the whole row.
+    # avoids artificially inflating S6's variance (regression rows would otherwise be dropped,
+    # leaving only classification rows where S6 happens to spread widely).
+    sub = score_matrix[rules].fillna(score_matrix[rules].median())
     informative = [r for r in rules if sub[r].std() > 1e-9] # rules with variance; constants carry no CRITIC signal
 
     if len(informative) < 2: #if there are fewer than 2 informative rules, can't really apply the CRITIC method, so just return the AHP scores and mark everything as "AGREE"
