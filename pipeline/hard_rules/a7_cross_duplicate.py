@@ -7,8 +7,13 @@
 
 import pandas as pd
 
+from pipeline.hard_rules.base import RuleResult
+
 # NaN values are problem -> set to a very small number so that they hash to the same value
 _NA_SENTINEL = -1.7e308
+
+# if >30% of unique row patterns overlap with another accepted dataset -> reject
+OVERLAP_THRESHOLD = 0.3
 
 
 def hash_sorted_rows(dataset):
@@ -24,10 +29,27 @@ def hash_sorted_rows(dataset):
 
 
 def row_overlap(hash_a, hash_b):
-# fraction of unique row patterns in the smaller dataset that also appear in the larger one
+    # fraction of unique row patterns in the smaller dataset that also appear in the larger one
     if len(hash_a) == 0 or len(hash_b) == 0:
         return 0.0
-    intersection = len(hash_a.intersection(b))
+    intersection = len(hash_a.intersection(hash_b))
     smaller_size = min(len(hash_a), len(hash_b))
     return intersection / smaller_size
+
+
+def check(dataset, pool):
+    own_hashes = hash_sorted_rows(dataset)
+
+    # check against each pool member, fail on the first one that exceeds the threshold
+    for other_id, other_hashes in pool:
+        overlap = row_overlap(own_hashes, other_hashes)
+        if overlap > OVERLAP_THRESHOLD:
+            return RuleResult(
+                rule="A7",
+                passed=False,
+                reason=f"duplicate of {other_id} (overlap={overlap:.2f})",
+                details={"matched_id": other_id, "overlap": overlap},
+            )
+
+    return RuleResult(rule="A7", passed=True, details={"pool_size": len(pool)})
 
