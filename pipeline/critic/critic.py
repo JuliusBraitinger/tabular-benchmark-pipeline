@@ -76,7 +76,9 @@ def run_critic(score_matrix):
         delta = abs(ahp_points - crit_points)
         if rule in informative:
             verdict = "DIVERGE" if delta > DIVERGENCE_THRESHOLD else "AGREE"
-            final = ahp_points if verdict == "AGREE" else crit_points
+            # average AHP and CRITIC instead of override. softer compromise than override-on-DIVERGE.
+            # see Tzeng et al. and other AHP-CRITIC integration variants in the MCDM literature.
+            final = round((ahp_points + crit_points) / 2)
             stdv = float(standard_deviation[rule])
             info_val = float(informativeness[rule])
         else: # degenerate rule: no CRITIC signal, fall back to AHP
