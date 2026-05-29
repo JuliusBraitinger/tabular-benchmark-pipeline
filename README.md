@@ -87,6 +87,19 @@ to disk between phases so RAM stays bounded to one dataset at a time.
    └─────────┘ └─────────┘ └─────────┘ │ data    │ │ only    │
                                        └─────────┘ └─────────┘
                                                  │
+                                                 │
+                                                 │
+                                                 │
+                                                 ▼  
+                                      ┌────────────────────────┐
+                                      │ a7_cross_duplicates.py │
+                                      │                        │
+                                      │  checks for duplicates │   
+                                      │   in pool of datasets  │                    
+                                      │ • RuleResult           │
+                                      │   (rule,passed,reason) │
+                                      └────────────────────────┘
+                                                 │
                                                  ▼  (returns RuleResult)
                                       ┌──────────────────────┐
                                       │ hard_rules/base.py   │
@@ -187,7 +200,7 @@ pool-free and run in the same loop.
 | S1 Uniqueness     | 10 | per-column moment fingerprint (mean/std/skew/kurt) → cosine vs pool |
 | S2 IID            | 10 | strict exact-duplicate rows on `(X | y)` via row hashing |
 | S3 Data Quality   | 15 | composite: completeness, consistency, outliers (IF), constant features |
-| S4 Data Leakage   | 20 | **TODO** — group k-fold + MI spike + dist shift |
+| S4 Data Leakage   | 20 |  group k-fold + MI spike + dist shift |
 | S5 Batch Effects  |  – | **TODO** — no reliable automated detection method |
 | S6 Class Balance  |  5 | normalized Shannon entropy of class distribution |
 | S7 Domain-QC      |  – | **TODO** — too domain-specific to automate generically |
@@ -205,6 +218,7 @@ cleanliness signal, and keeping them in both rules would double-count.
 | A3 Signal           | implemented (permutation RF; TabPFN flag for *too-easy* signals planned) |
 | A5 Dimensions       | implemented (N ≥ MIN_ROWS, P ≥ MIN_FEATURES; both metadata and data checks) |
 | A6 Licence          | implemented (normalises string, rejects NC/ND, allow-list) |
+| A7 duplicate check  | implemented (hashes row sorted, if they datasets overlap to much, delete)
 
 ## Testing
 
