@@ -8,12 +8,14 @@ from pathlib import Path
 import pandas as pd
 import requests
 from ucimlrepo import fetch_ucirepo
+from ucimlrepo import list_ucirepo
 
 from pipeline import stats
-from pipeline.config import MAX_FEATURES, MIN_FEATURES, REQUEST_DELAY
+from pipeline.config import MAX_FEATURES, MIN_FEATURES, REQUEST_DELAY, MIN_ROWS
 from pipeline.data.base import CandidateInfo, Dataset
 from pipeline.hard_rules import runner as hard_rules
 from pipeline.hard_rules.base import RuleResult
+
 
 logger = logging.getLogger(__name__)
 
@@ -93,5 +95,64 @@ def fetch(candidate:CandidateInfo):
     )
 
 
-def list_candidates(max_per_source: int = 50):
-    return None
+def list_candidates(max_candidates: int = 100):
+    logger.info("Listing UCI datasets...")
+
+    # step 1: get the full list of (id, name) pairs
+    resp = requests.get(UCI_LIST_URL, timeout=HTTP_TIMEOUT)
+    resp.raise_for_status()
+    listing = resp.json()["data"]
+    logger.info("UCI: %d datasets in catalog", len(listing))
+
+    candidates = []
+    for item in listing:
+        if len(candidates) >= max_candidates:
+            break
+
+        uci_id = item["id"]
+        meta = fetch_metadata(uci_id)
+        time.sleep(REQUEST_DELAY)
+        if meta is None:
+            continue
+
+        # step 2: pull the fields need
+        n = meta.get("num_instances") or 0
+        p = meta.get("num_features") or 0
+        name = meta.get("name", "")
+        tasks = meta.get("tasks") or []
+        task_type = tasks[0].lower() if tasks else "unknown"
+        licence = meta.get("license") or ""
+
+        if n < MIN_ROWS or p < MIN_FEATURES:
+            continue
+
+        # step 4: metadata hard rules (A1, A2, A5, A6)
+        results = hard_rules.run_metadata_checks(
+            n_samples=n,
+            n_features=p,
+            task_type=task_type,
+            licence=licence,
+            source="uci",
+            name=name,
+            metadata={},
+        )
+        stats.record(str(uci_id), "uci", name, results)
+
+        if hard_rules.failed_rules(results):
+            continue
+
+        # step 5: passed,
+        candidates.append(CandidateInfo(
+            id=str(uci_id),
+            source="uci",
+            name=name,
+            n_samples=n,
+            n_features=p,
+            task_type=task_type,
+            licence=licence,
+            url=f"https://archive.ics.uci.edu/dataset/{uci_id}",
+            metadata={},
+        ))
+
+    logger.info("UCI: %d candidates", len(candidates))
+    return candidates
