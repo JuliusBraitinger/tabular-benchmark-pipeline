@@ -8,7 +8,6 @@ from pathlib import Path
 import pandas as pd
 import requests
 from ucimlrepo import fetch_ucirepo
-from ucimlrepo import list_ucirepo
 
 from pipeline import stats
 from pipeline.config import MAX_FEATURES, MIN_FEATURES, REQUEST_DELAY, MIN_ROWS
@@ -115,13 +114,13 @@ def list_candidates(max_candidates: int = 100):
         if meta is None:
             continue
 
-        # step 2: pull the fields need
-        n = meta.get("num_instances") or 0
+        # step 2: pull the fields
+        n = meta.get("num_instances") or 0 #if unknown or missing set to 0 so condition holds 
         p = meta.get("num_features") or 0
         name = meta.get("name", "")
         tasks = meta.get("tasks") or []
         task_type = tasks[0].lower() if tasks else "unknown"
-        licence = meta.get("license") or ""
+        licence = meta.get("license") or "CC By 4.0"
 
         if n < MIN_ROWS or p < MIN_FEATURES:
             continue
