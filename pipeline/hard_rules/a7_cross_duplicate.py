@@ -5,12 +5,14 @@
 #  limitation: sorting also drops column meaning, so two semantically-different rows with
 # the same multiset of values will collide. VERY unlikley 
 
-import pandas as pd
+import numpy as np
 
 from pipeline.hard_rules.base import RuleResult
 
-# NaN values are problem -> set to a very small number so that they hash to the same value
-_NA_SENTINEL = -1.7e308
+# NaN values are problem -> set to a very small number so that they hash to the same value.
+# stays well outside the range of any real measurement but avoids the float64-min overflow
+# that the previous -1.7e308 sentinel triggered in pandas hash routines.
+_NA_SENTINEL = -1e30
 
 # if >30% of unique row patterns overlap with another accepted dataset -> reject
 OVERLAP_THRESHOLD = 0.3
@@ -18,14 +20,12 @@ OVERLAP_THRESHOLD = 0.3
 
 def hash_sorted_rows(dataset):
     # sort each row's values then hash it. column order then doesnt matter.
-    X = dataset.X.select_dtypes(include="number").fillna(_NA_SENTINEL)
-
-    arr = X.to_numpy(copy=True)   # copy so .sort() doesnt mutate the original df
+    # hash row-bytes directly instead of going through pd.util.hash_pandas_object
+    # faster
+    X = dataset.X.select_dtypes(include="number")
+    arr = X.to_numpy(dtype=np.float64, na_value=_NA_SENTINEL, copy=True)
     arr.sort(axis=1)              # in-place row-wise sort
- 
-    sorted_df = pd.DataFrame(arr)
-    hashes = pd.util.hash_pandas_object(sorted_df, index=False)
-    return set(hashes.tolist())
+    return {hash(arr[i].tobytes()) for i in range(arr.shape[0])}
 
 
 def row_overlap(hash_a, hash_b):
