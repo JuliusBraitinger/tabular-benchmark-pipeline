@@ -48,18 +48,19 @@ def fetch(candidate:CandidateInfo):
         X = pd.read_parquet(x_file)
         y = pd.read_parquet(y_file).iloc[:, 0] #parquet doesn't support Series, so read as DataFrame and take the first column
     else:  
-        logger.info("Downloading UCI dataset id=%d from ucimlrepo...", id)
+        # option A: change format
+        logger.info("Downloading UCI dataset id=%s from ucimlrepo...", id)
         try:
-            results = fetch_ucirepo(id)
+            results = fetch_ucirepo(id=int(id))
         except Exception as e:
-            logger.info("UCI dataset fetch failed for id=%d: %s", id, e)
+            logger.info("UCI dataset fetch failed for id=%s: %s", id, e)
             return None
         
         X = results.data.features
         y = results.data.targets
 
         if X is None or y is None:
-            logger.info("UCI dataset id=%d has no data, skipping", id)
+            logger.info("UCI dataset id=%s has no data, skipping", id)
             return None
         
         if isinstance(y, pd.DataFrame) and y.shape[1] == 1:
@@ -68,16 +69,16 @@ def fetch(candidate:CandidateInfo):
         folder.mkdir(parents=True, exist_ok=True)
         X.to_parquet(x_file)
         y.to_frame().to_parquet(y_file)
-        logger.info("UCI dataset id=%d downloaded and cached", id)
+        logger.info("UCI dataset id=%s downloaded and cached", id)
 
     data_results = hard_rules.run_data_checks(X, y, candidate.task_type)
     stats.record(candidate.id, "uci", candidate.name, data_results)
     failed = hard_rules.failed_rules(data_results)
     if failed:
-        logger.info("UCI dataset id=%d failed hard rules: %s", id, ", ".join(f"{r.rule}: {r.reason}" for r in failed))
+        logger.info("UCI dataset id=%s failed hard rules: %s", id, ", ".join(f"{r.rule}: {r.reason}" for r in failed))
         return None
     task_type = hard_rules.inferred_task_type(data_results)
-    logger.info("UCI dataset id=%d inferred task type: %s", id, task_type)
+    logger.info("UCI dataset id=%s inferred task type: %s", id, task_type)
 
     return Dataset(
         id=candidate.id,
@@ -113,6 +114,9 @@ def list_candidates(max_candidates: int = 100):
         time.sleep(REQUEST_DELAY)
         if meta is None:
             continue
+        
+        if not meta.get("data_url"): #if no data url, can't fetch the dataset, so skip
+            continue
 
         # step 2: pull the fields
         n = meta.get("num_instances") or 0 #if unknown or missing set to 0 so condition holds 
@@ -122,7 +126,7 @@ def list_candidates(max_candidates: int = 100):
         task_type = tasks[0].lower() if tasks else "unknown"
         licence = meta.get("license") or "CC By 4.0"
 
-        if n < MIN_ROWS or p < MIN_FEATURES:
+        if n < MIN_ROWS or p < MIN_FEATURES or p > MAX_FEATURES:
             continue
 
         # step 4: metadata hard rules (A1, A2, A5, A6)
