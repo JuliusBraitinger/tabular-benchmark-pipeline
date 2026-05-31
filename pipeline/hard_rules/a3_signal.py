@@ -9,8 +9,8 @@
 # 3. if the real score is way better than the shuffled ones, theres actual signal
 # 4.  measure this with a p-value. p < 0.05 means the signal is real
 #
-# for classification  use AUC as metric, for regression R2
-# sklearn already permutation_test_score
+# for classification use balanced_accuracy as metric, for regression R2
+# sklearn already provides permutation_test_score
 
 
 #TODO implement tappfn 2 um zu schauen ob das Signal ZU GUT ist -> dann flaggen bzw. wegschmeißen 
@@ -45,6 +45,16 @@ TABPFN_MAX_FEATURES = 500
 
 def check_data(X, y, task_type="classification", **_kwargs):
     """Permutation test: if p < 0.05, the data has real signal."""
+
+    # drop rows with missing target — LabelEncoder + permutation_test_score
+    # both fail on NaN. Must happen before any inference / encoding.
+    mask = pd.notna(y)
+    if not mask.all():
+        X = X.loc[mask]
+        y = y.loc[mask]
+
+    if len(y) == 0:
+        return RuleResult(rule="A3", passed=False, reason="all target values were NaN")
 
     # if task_type is unknown, infer it from y: non-numeric or few unique values
     # -> classification (string labels like 'SITTING', 'WALKING' fall here)

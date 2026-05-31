@@ -9,7 +9,10 @@ from pipeline.hard_rules.base import RuleResult
 
 # keywords that suggest a dataset is not real for regex
 SYNTHETIC_KEYWORDS = re.compile(
-    r"synthetic|artificial|generated|simulated|random",
+    r"synthetic|artificial|generated|simulated|random|"
+    r"toy|demo|dummy|mock|fake|bogus|"
+    r"monte.?carlo|"
+    r"make_(classification|regression|blobs|moons|circles|swiss_roll)",
     re.IGNORECASE,
 )
 
