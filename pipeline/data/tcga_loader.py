@@ -323,6 +323,7 @@ def list_candidates(max_candidates=100):
                     "sample_types": sorted(sample_types),
                     "sample_file_id": file_id,
                 },
+                domain="biomedical",
             ))
             logger.info(
                 "%s %s: N=%d P=%d task=%s",
@@ -438,6 +439,7 @@ def fetch(candidate):
             "licence": "public",
             "url": candidate.url,
         },
+        domain="biomedical",
     )
 
 

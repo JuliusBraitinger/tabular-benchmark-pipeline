@@ -320,6 +320,7 @@ def list_candidates(max_candidates=50):
                         "class_labels": meta["class_labels"],
                         "organism": "Homo sapiens",
                     },
+                    domain="biological",
                 ))
 
                 logger.info(
@@ -484,4 +485,5 @@ def fetch(candidate):
             "licence": "public-domain",
             "url": candidate.url,
         },
+        domain="biological",
     )

@@ -158,7 +158,7 @@ def fetch_croissant_fields(ref: str, auth: tuple [str,str]) -> list[str]:
     return names
 
 
-def list_candidates(max_candidates: int = 50):
+def list_candidates(max_candidates: int = 100):
     logger.info("Listing Kaggle datasets...")
 
     try:

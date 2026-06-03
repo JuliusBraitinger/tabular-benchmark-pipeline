@@ -11,8 +11,8 @@ import pandas as pd
 class Dataset:
     """
     This is a class that represents a dataset that is returned by the data loaders.
-    To make it more general, we can use a dataclass to represent the dataset, 
-    which can contain both the actual data and the metadata. 
+    To make it more general, we can use a dataclass to represent the dataset,
+    which can contain both the actual data and the metadata.
     It contains the following attributes:
     id: identifier of the datasetsets, e.g. "OpenML-1578", "TCGA-LGG-GEX", "GEO-GSE12345".
     source: source of each dataset (openml, tcga, geo_array...).
@@ -20,9 +20,11 @@ class Dataset:
     x: feature matrix (samples x features)
     y: target variable (series of length n_samples)
     task_type: classification or regression
-    metadata: actual metadata coming from the fetching phase, which can be used for the soft rules. 
+    metadata: actual metadata coming from the fetching phase, which can be used for the soft rules.
     It can contain information such as the organism, the platform, the licence, etc.
-    
+    domain: high-level category tag — "biomedical" (clinical / cancer / patient),
+        "biological" (broader life sciences, e.g. gene expression studies), or
+        "general" (everything else, e.g. tabular ML benchmarks).
     """
 
     id: str
@@ -32,6 +34,7 @@ class Dataset:
     y: pd.Series
     task_type: str
     metadata: dict
+    domain: str = "general"
 
 
 @dataclass(frozen=True)
@@ -47,6 +50,7 @@ class CandidateInfo:
     licence: str
     url: str
     metadata: dict
+    domain: str = "general"
 
 
 class DataSource(Protocol):
