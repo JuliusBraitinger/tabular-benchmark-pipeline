@@ -1,4 +1,4 @@
-"""A5: dataset must meet minimum dimension requirements."""
+"""A4: dataset must meet minimum dimension requirements."""
 from __future__ import annotations
 
 from pipeline.config import MIN_FEATURES, MIN_ROWS
@@ -19,13 +19,13 @@ def check_metadata(
         reasons.append("P=" + str(n_features) + " < " + str(MIN_FEATURES))
 
     if reasons:
-        return RuleResult(rule="A5", passed=False, reason="; ".join(reasons))
+        return RuleResult(rule="A4", passed=False, reason="; ".join(reasons))
 
     # if both are None toss to data level check
     if n_samples is None and n_features is None:
         return None
 
-    return RuleResult(rule="A5", passed=True)
+    return RuleResult(rule="A4", passed=True)
 
 
 def check_data(
@@ -42,5 +42,5 @@ def check_data(
         reasons.append(f"P={n_features} < {MIN_FEATURES}")
 
     if reasons:
-        return RuleResult(rule="A5", passed=False, reason="; ".join(reasons))
-    return RuleResult(rule="A5", passed=True)
+        return RuleResult(rule="A4", passed=False, reason="; ".join(reasons))
+    return RuleResult(rule="A4", passed=True)

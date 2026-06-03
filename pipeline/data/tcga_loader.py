@@ -267,7 +267,7 @@ def list_candidates(max_candidates=100):
             acc = grp["access"]
             sample_types = grp["sample_types"]
 
-            # A6: only open access allowed
+            # A5: only open access allowed
             if acc != "open":
                 continue
 

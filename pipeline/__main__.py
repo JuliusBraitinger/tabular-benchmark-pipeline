@@ -12,7 +12,7 @@ import pandas as pd
 
 from pipeline.data import registry
 from pipeline.data.base import Dataset
-from pipeline.hard_rules import a7_cross_duplicate
+from pipeline.hard_rules import a6_cross_duplicate
 from pipeline import stats
 from pipeline import soft_stats
 from pipeline.soft_rules import s3_data_quality as s3
@@ -64,7 +64,7 @@ def main() -> None:
 
     # Phase 1: scrape candidates (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
-    candidates = registry.list_candidates(sources=["kaggle"], max_per_source=30)
+    candidates = registry.list_candidates(sources=["uci"], max_per_source=30)
     
     log.info("Got %d candidates", len(candidates))
 
@@ -74,7 +74,7 @@ def main() -> None:
     log.info("=== Phase 2: fetching + saving datasets ===")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     saved_dirs: list[Path] = []
-    a7_pool: list[tuple[str, set]] = []  # (id, row-hash set) for cross-dataset duplicate check
+    a6_pool: list[tuple[str, set]] = []  # (id, row-hash set) for cross-dataset duplicate check
     for i, candidate in enumerate(candidates, 1):
         log.info("[%d/%d] fetching %s", i, len(candidates), candidate.id)
         try:
@@ -85,17 +85,17 @@ def main() -> None:
         if ds is None:
             continue
 
-        # A7: reject if this dataset duplicates one already accepted
-        a7_result = a7_cross_duplicate.check(ds, a7_pool)
-        if not a7_result.passed:
-            log.info("  A7 rejected %s: %s", ds.id, a7_result.reason)
+        # A6: reject if this dataset duplicates one already accepted
+        a6_result = a6_cross_duplicate.check(ds, a6_pool)
+        if not a6_result.passed:
+            log.info("  A6 rejected %s: %s", ds.id, a6_result.reason)
             del ds
             continue
 
         ds_dir = _save_dataset(ds, OUTPUT_DIR)
         log.info("  saved %s: X=%s task=%s", ds.id, ds.X.shape, ds.task_type)
         saved_dirs.append(ds_dir)
-        a7_pool.append((ds.id, a7_cross_duplicate.hash_sorted_rows(ds)))
+        a6_pool.append((ds.id, a6_cross_duplicate.hash_sorted_rows(ds)))
         del ds  # release memory before fetching the next candidate
 
         if len(saved_dirs) >= MAX_SAVED_DATASETS:

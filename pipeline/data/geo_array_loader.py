@@ -42,10 +42,10 @@ if NCBI_API_KEY:
     Entrez.api_key = NCBI_API_KEY
 
 # NOTE: this is a LOOSE pre-filter, NOT the real benchmark threshold!
-# The actual hard rule is MIN_ROWS = 1000 (from config.py, enforced by A5).
+# The actual hard rule is MIN_ROWS = 1000 (from config.py, enforced by A4).
 # We use this loose 50 here just to skip obviously tiny GEO studies before
 # doing the expensive GEOparse download. Studies with 50-999 samples will
-# still be parsed here, and then rejected later by the A5 hard rule.
+# still be parsed here, and then rejected later by the A4 hard rule.
 MIN_SAMPLES = 500  # GEO studies are typically smaller
 
 # where we cache GEOparse downloads so we don't re-download the same GSE
@@ -66,7 +66,7 @@ NORMAL_PATTERN = re.compile(
 
 # GEO search queries (we loop over all of them and combine the results).
 # Each query filters for human microarray studies large enough to satisfy
-# the A5 hard rule (N>=500). We try several topical contrast pairs to get
+# the A4 hard rule (N>=500). We try several topical contrast pairs to get
 # enough variety; duplicates across queries are dropped via the `seen` set.
 _QUERY_BASE = (
     '"Homo sapiens"[ORGN] AND gse[ETYP]'
@@ -258,7 +258,7 @@ def list_candidates(max_candidates=50):
 
                 # cheap pre-filter: throw out tiny studies right away so we
                 # don't waste a GEOparse download on them. The REAL N>=1000
-                # check happens later inside hard_rules.run_metadata_checks (A5).
+                # check happens later inside hard_rules.run_metadata_checks (A4).
                 if n_samples < MIN_SAMPLES:
                     continue
 

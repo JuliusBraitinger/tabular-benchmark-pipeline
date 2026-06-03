@@ -1,4 +1,4 @@
-# A7 Cross-Dataset Duplicate
+# A6 Cross-Dataset Duplicate
 # checks if a dataset shares too many rows with another dataset in the benchmark pool.
 # subset detection: if A's rows are mostly contained in B, A is probably a subset of B.
 # sorting values per row makes hashes invariant to column order (catches feature-shuffled copies).
@@ -45,11 +45,11 @@ def check(dataset, pool):
         overlap = row_overlap(own_hashes, other_hashes)
         if overlap > OVERLAP_THRESHOLD:
             return RuleResult(
-                rule="A7",
+                rule="A6",
                 passed=False,
                 reason=f"duplicate of {other_id} (overlap={overlap:.2f})",
                 details={"matched_id": other_id, "overlap": overlap},
             )
 
-    return RuleResult(rule="A7", passed=True, details={"pool_size": len(pool)})
+    return RuleResult(rule="A6", passed=True, details={"pool_size": len(pool)})
 

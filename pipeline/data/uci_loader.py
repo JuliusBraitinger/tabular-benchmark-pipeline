@@ -130,7 +130,7 @@ def list_candidates(max_candidates: int = 100):
         if n < MIN_ROWS or p < MIN_FEATURES or p > MAX_FEATURES:
             continue
 
-        # step 4: metadata hard rules (A1, A2, A5, A6)
+        # step 4: metadata hard rules (A1, A2, A4, A5)
         results = hard_rules.run_metadata_checks(
             n_samples=n,
             n_features=p,

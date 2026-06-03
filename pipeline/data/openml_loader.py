@@ -52,7 +52,7 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
         # ask OpenML what kind of task this dataset is for (classification/regression)
         task_type = _fetch_task_type(did)
 
-        # Step 4: run metadata-level hard rules (A1 task type, A2 synthetic, A5 dimensions, A6 licence)
+        # Step 4: run metadata-level hard rules (A1 task type, A2 synthetic, A4 dimensions, A5 licence)
         results = hard_rules.run_metadata_checks(
             n_samples=n_samples,
             n_features=n_features,
@@ -116,7 +116,7 @@ def fetch(candidate: CandidateInfo) -> Dataset | None: #aktuell werden hier auch
     # run data-level hard rules on the actual downloaded data.
     # A1 = if metadata task was 'unknown', infer from target (sets details['inferred_task'])
     # A3 = does the data have predictive signal (RandomForest cross-val)
-    # A5 = do the real dimensions still meet thresholds
+    # A4 = do the real dimensions still meet thresholds
     data_results = hard_rules.run_data_checks(X, y, task_type=candidate.task_type)
     stats.record(str(did), "openml", candidate.name, data_results)
 

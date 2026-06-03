@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-# --- Dimension thresholds (A5) ---
+# --- Dimension thresholds (A4) ---
 MIN_ROWS = 1000
 MIN_FEATURES = 1000
 # Upper bound: a 16 GB box can't hold a dense float32 matrix much larger than
@@ -18,14 +18,14 @@ MIN_FEATURES = 1000
 MAX_FEATURES = 200_000
 
 # --- Kaggle loader thresholds ---
-KAGGLE_MIN_BYTES = 5_000_000      # 5 MB: rough A5 lower bound on zip size
+KAGGLE_MIN_BYTES = 5_000_000      # 5 MB: rough A4 lower bound on zip size
 KAGGLE_MAX_BYTES = 2_000_000_000  # 2 GB: stay under MAX_FEATURES OOM territory
 KAGGLE_TARGET_NAMES = (
     "target", "label", "class", "y", "outcome", "survived", "diagnosis",
 )
 KAGGLE_TARGET_SUFFIXES = ("_label", "_target", "_class")
 
-# --- Licence allow-list (A6) ---
+# --- Licence allow-list (A5) ---
 ALLOWED_LICENCES = frozenset({
     "cc0-1.0", "cc0", "public-domain",
     "cc-by-4.0", "cc-by-sa-4.0",
