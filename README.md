@@ -65,8 +65,8 @@ to disk between phases so RAM stays bounded to one dataset at a time.
    │                  pipeline/hard_rules/runner.py                       │
    │                     ═══ RULE ORCHESTRATOR ═══                        │
    │                                                                      │
-   │   _METADATA_CHECKS = [A1, A2, A5, A6]  ← cheap, metadata-only        │
-   │   _DATA_CHECKS     = [A3, A5]          ← needs downloaded data       │
+   │   _METADATA_CHECKS = [A1, A2, A4, A5]  ← cheap, metadata-only        │
+   │   _DATA_CHECKS     = [A3, A4]          ← needs downloaded data       │
    │                                                                      │
    │   run_metadata_checks(**kwargs) → loops and calls each rule          │
    │   run_data_checks(X, y, ...)    → loops and calls each rule          │
@@ -75,12 +75,12 @@ to disk between phases so RAM stays bounded to one dataset at a time.
         │         │          │          │          │
         ▼         ▼          ▼          ▼          ▼
    ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
-   │  a1_    │ │  a2_    │ │  a3_    │ │  a5_    │ │  a6_    │
+   │  a1_    │ │  a2_    │ │  a3_    │ │  a4_    │ │  a5_    │
    │ task_   │ │synthetic│ │ signal  │ │dimension│ │ licence │
    │ type.py │ │  .py    │ │  .py    │ │  .py    │ │  .py    │
    │         │ │         │ │         │ │         │ │         │
    │ classif │ │ regex + │ │permutat-│ │ N ≥1000 │ │ open    │
-   │ /regr?  │ │ TCGA/   │ │ ion RF  │ │ P≥10000 │ │ licence?│
+   │ /regr?  │ │ TCGA/   │ │ ion RF  │ │ P ≥1000 │ │ licence?│
    │         │ │ GEO     │ │ +TabPFN │ │ both!   │ │         │
    │ meta +  │ │ auto-   │ │  ↓      │ │         │ │         │
    │ data    │ │ pass    │ │data only│ │ meta+   │ │ meta    │
@@ -92,7 +92,7 @@ to disk between phases so RAM stays bounded to one dataset at a time.
                                                  │
                                                  ▼  
                                       ┌────────────────────────┐
-                                      │ a7_cross_duplicates.py │
+                                      │ a6_cross_duplicates.py │
                                       │                        │
                                       │  checks for duplicates │   
                                       │   in pool of datasets  │                    
@@ -199,11 +199,11 @@ pool-free and run in the same loop.
 |------|--------|----------------|
 | S1 Uniqueness     | 10 | per-column moment fingerprint (mean/std/skew/kurt) → cosine vs pool |
 | S2 IID            | 10 | strict exact-duplicate rows on `(X | y)` via row hashing |
-| S3 Data Quality   | 15 | composite: completeness, consistency, outliers (IF), constant features |
-| S4 Data Leakage   | 20 |  group k-fold + MI spike + dist shift |
-| S5 Batch Effects  |  – | **TODO** — no reliable automated detection method |
+| S3 Data Quality   | 15 | composite: completeness, consistency, outliers (IF), constant + quasi-constant features |
+| S4 Data Leakage   | 20 | per-feature predictive stat (Mann-Whitney / Spearman); group k-fold + MI spike planned |
+| S5 Batch Effects  |  – | **stub** — returns 1.0; needs batch labels we don't reliably have |
 | S6 Class Balance  |  5 | normalized Shannon entropy of class distribution |
-| S7 Domain-QC      |  – | **TODO** — too domain-specific to automate generically |
+| S7 Domain-QC      |  – | **placeholder** — too domain-specific to automate generically |
 
 S2's duplicate detection used to live inside S3 as a "uniqueness" sub-metric
 but was moved out — duplicates are an IID-assumption violation, not a data
@@ -214,11 +214,22 @@ cleanliness signal, and keeping them in both rules would double-count.
 | Rule | Status |
 |------|--------|
 | A1 Task type        | implemented (classification/regression, infers from target if unknown) |
-| A2 Synthetic check  | implemented (regex on name/tags; TCGA + GEO auto-pass) |
-| A3 Signal           | implemented (permutation RF; TabPFN flag for *too-easy* signals planned) |
-| A5 Dimensions       | implemented (N ≥ MIN_ROWS, P ≥ MIN_FEATURES; both metadata and data checks) |
-| A6 Licence          | implemented (normalises string, rejects NC/ND, allow-list) |
-| A7 duplicate check  | implemented (hashes row sorted, if they datasets overlap to much, delete)
+| A2 Synthetic check  | implemented (regex on name/tags + `make_*` sklearn generators; TCGA + GEO auto-pass) |
+| A3 Signal           | implemented (permutation RF on `balanced_accuracy`/R²; TabPFN second-opinion for trivial signals) |
+| A4 Dimensions       | implemented (N ≥ MIN_ROWS, P ≥ MIN_FEATURES; both metadata and data checks) |
+| A5 Licence          | implemented (normalises string, rejects NC/ND, allow-list) |
+| A6 Cross-duplicates | implemented (row-sort + bytes-hash; rejects if overlap with already-accepted dataset > threshold) |
+
+## Domain tagging
+
+Each `CandidateInfo` and `Dataset` carries a `domain` field — one of:
+- `"biomedical"` — clinical / cancer / patient (TCGA hardcodes this)
+- `"biological"` — broader life sciences (GEO microarray + RNA-seq hardcode this)
+- `"general"` — everything else; default for OpenML / Kaggle / UCI
+
+For the heterogeneous sources, `data/base.py:infer_domain(name, tags, description)`
+runs a keyword regex to upgrade `"general"` candidates to biomedical/biological
+when titles mention cancer, gene expression, methylation, etc.
 
 ## Testing
 

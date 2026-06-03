@@ -24,7 +24,6 @@ _BIOLOGICAL_KEYWORDS = re.compile(
 
 
 def infer_domain(name: str = "", tags: Iterable[str] = (), description: str = ""):
-    """Pick a domain tag from free-text fields. Biomedical wins over biological wins over general."""
     blob = " ".join([name, *tags, description])
     if _BIOMEDICAL_KEYWORDS.search(blob):
         return "biomedical"
