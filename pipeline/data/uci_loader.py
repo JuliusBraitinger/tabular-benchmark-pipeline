@@ -91,7 +91,8 @@ def fetch(candidate:CandidateInfo):
             **candidate.metadata,
             "license" : candidate.licence,
             "url" : candidate.url,
-        }
+        },
+        domain=candidate.domain,
     )
 
 
@@ -155,7 +156,7 @@ def list_candidates(max_candidates: int = 100):
             licence=licence,
             url=f"https://archive.ics.uci.edu/dataset/{uci_id}",
             metadata={},
-            domain=infer_domain(name, meta.get("characteristics")),
+            domain=infer_domain(name, meta.get("characteristics") or []),
         ))
 
     logger.info("UCI: %d candidates", len(candidates))
