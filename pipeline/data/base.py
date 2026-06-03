@@ -1,10 +1,36 @@
 """Base classes for the data loading layer."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Iterable, Protocol
 
 import pandas as pd
+
+
+# Domain inference for heterogeneous sources (OpenML, Kaggle, UCI). Biomedical
+# sources (TCGA, GEO) set their domain explicitly and never go through this.
+_BIOMEDICAL_KEYWORDS = re.compile(
+    r"cancer|tumou?r|carcinoma|leukemia|disease|patient|clinical|medical|"
+    r"diagnos|hospital|drug|methylation|biopsy|genom|proteom|tcga",
+    re.IGNORECASE,
+)
+_BIOLOGICAL_KEYWORDS = re.compile(
+    r"gene|protein|microarray|rna.?seq|organism|species|"
+    r"phylogen|microbi|bacteri|virus|plant|"
+    r"\bcell\b|\bdna\b|\brna\b",
+    re.IGNORECASE,
+)
+
+
+def infer_domain(name: str = "", tags: Iterable[str] = (), description: str = ""):
+    """Pick a domain tag from free-text fields. Biomedical wins over biological wins over general."""
+    blob = " ".join([name, *tags, description])
+    if _BIOMEDICAL_KEYWORDS.search(blob):
+        return "biomedical"
+    if _BIOLOGICAL_KEYWORDS.search(blob):
+        return "biological"
+    return "general"
 
 
 @dataclass(frozen=True)

@@ -11,7 +11,7 @@ from ucimlrepo import fetch_ucirepo
 
 from pipeline import stats
 from pipeline.config import MAX_FEATURES, MIN_FEATURES, REQUEST_DELAY, MIN_ROWS
-from pipeline.data.base import CandidateInfo, Dataset
+from pipeline.data.base import CandidateInfo, Dataset, infer_domain
 from pipeline.hard_rules import runner as hard_rules
 from pipeline.hard_rules.base import RuleResult
 
@@ -155,6 +155,7 @@ def list_candidates(max_candidates: int = 100):
             licence=licence,
             url=f"https://archive.ics.uci.edu/dataset/{uci_id}",
             metadata={},
+            domain=infer_domain(name, meta.get("characteristics")),
         ))
 
     logger.info("UCI: %d candidates", len(candidates))

@@ -32,7 +32,7 @@ from pipeline.config import (
     MIN_FEATURES,
     REQUEST_DELAY,
 )
-from pipeline.data.base import CandidateInfo, Dataset
+from pipeline.data.base import CandidateInfo, Dataset, infer_domain
 from pipeline.hard_rules import runner as hard_rules
 from pipeline.hard_rules.base import RuleResult
 
@@ -130,6 +130,7 @@ def fetch(candidate: CandidateInfo):
             "licence": candidate.licence,
             "url": f"https://www.kaggle.com/datasets/{id}",
         },
+        domain=candidate.domain,
     )
 
 
@@ -267,6 +268,7 @@ def list_candidates(max_candidates: int = 100):
                 licence=license,
                 url=f"https://www.kaggle.com/datasets/{id}",
                 metadata={"total_bytes": total_bytes},
+                domain=infer_domain(title),
             ))
             time.sleep(REQUEST_DELAY)
 

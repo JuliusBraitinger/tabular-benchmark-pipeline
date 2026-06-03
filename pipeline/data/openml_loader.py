@@ -15,7 +15,7 @@ import openml
 import pandas as pd
 
 from pipeline.config import ACCEPTED_TASKS, MIN_FEATURES, MIN_ROWS  # imports thresholds from config.py
-from pipeline.data.base import CandidateInfo, Dataset  # imported dataclasses
+from pipeline.data.base import CandidateInfo, Dataset, infer_domain
 from pipeline.hard_rules import runner as hard_rules  # hard rule checks
 from pipeline import stats  # for recording stats about the datasets we process
 
@@ -83,6 +83,7 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
             licence=licence,
             url=f"https://www.openml.org/d/{did}",
             metadata={},
+            domain=infer_domain(name),
         ))
 
     logger.info("OpenML: %d candidates after metadata filters", len(candidates))
@@ -147,6 +148,7 @@ def fetch(candidate: CandidateInfo) -> Dataset | None: #aktuell werden hier auch
             "licence": candidate.licence,
             "url": candidate.url,
         },
+        domain=candidate.domain,
     )
 
 
