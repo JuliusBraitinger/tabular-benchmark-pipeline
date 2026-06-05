@@ -10,6 +10,9 @@ import numpy as np
 import pandas as pd
 
 from pipeline.data.base import CandidateInfo, Dataset
+from pipeline import stats   
+from pipeline.hard_rules import runner as hard_rules  # hard rule checks
+
 
 # folder to scan for exports, under the project data dir like the other datasets
 # (override with GEO_RNASEQ_DIR env var)
@@ -53,31 +56,41 @@ def list_candidates(max_candidates=50):
     for acc, folder in find_studies(EXPORT_DIR):
         with open(folder / f"{acc}_info.json") as f:
             info = json.load(f)
-
-        task = pick_task(info.get("detected_tasks", []))
+            task = pick_task(info.get("detected_tasks", []))
         if task is None:
             continue  # no usable target
 
-        candidates.append(CandidateInfo(
-            id=acc,
-            source="geo_rnaseq",
-            name=acc,
+        # metadata-level hard rules (A1/A2/A4/A5)
+        results = hard_rules.run_metadata_checks(
             n_samples=info.get("n_samples"),
             n_features=info.get("n_genes"),
             task_type=task["type"],
             licence="public-domain",
-            url=f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={acc}",
-            metadata={
-                "organism": info.get("organism", "unknown"),
-                "target_column": task["column"],
-                "folder": str(folder),
-            },
-            domain="biological",
-        ))
+            source="geo_rnaseq",
+            name=acc,
+        )
+        stats.record(acc, "geo_rnaseq", acc, results)
+        if not hard_rules.all_passed(results):
+            continue
 
+        candidates.append(CandidateInfo(
+        id=acc,
+        source="geo_rnaseq",
+        name=acc,
+        n_samples=info.get("n_samples"),
+        n_features=info.get("n_genes"),
+        task_type=task["type"],
+        licence="public-domain",
+        url=f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={acc}",
+        metadata={
+            "organism": info.get("organism", "unknown"),
+            "target_column": task["column"],
+            "folder": str(folder),
+        },
+        domain="biological",
+        ))
         if len(candidates) >= max_candidates:
             break
 
     return candidates
-
 
