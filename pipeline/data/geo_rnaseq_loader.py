@@ -116,6 +116,15 @@ def fetch(candidate):
     # raw salmon counts -> log1p so soft rules see a sane value range (TEST)
     X = np.log1p(X.clip(lower=0))
 
+    results = hard_rules.run_data_checks(
+        X=X,
+        y=y,
+        task_type=candidate.task_type,
+    )
+    stats.record(id, "geo_rnaseq", id, results)
+    if not hard_rules.all_passed(results):
+        return None
+    
     return Dataset(
         id=f"GEO-{id}",
         source="geo_rnaseq",

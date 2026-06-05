@@ -16,6 +16,7 @@ from typing import Callable
 from pipeline.data import base  # Dataset + CandidateInfo dataclasses
 from pipeline.data import (  # one loader per source
     geo_array_loader,
+    geo_rnaseq_loader,
     kaggle_loader,
     openml_loader,
     tcga_loader,
@@ -38,6 +39,10 @@ _LOADERS: dict[str, dict[str, Callable]] = {
     "geo_array": {
         "list": geo_array_loader.list_candidates,
         "fetch": geo_array_loader.fetch,
+    },
+    "geo_rnaseq": {
+        "list": geo_rnaseq_loader.list_candidates,
+        "fetch": geo_rnaseq_loader.fetch,
     },
     "kaggle": {
         "list": kaggle_loader.list_candidates,
