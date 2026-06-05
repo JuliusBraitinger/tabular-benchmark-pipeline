@@ -94,3 +94,37 @@ def list_candidates(max_candidates=50):
 
     return candidates
 
+
+
+def fetch(candidate):
+    id = candidate.id
+    folder = Path(candidate.metadata["folder"])
+    target = candidate.metadata["target_column"]
+
+    X = pd.read_parquet(folder / f"{id}_X.parquet")
+    meta = pd.read_parquet(folder / f"{id}_metadata.parquet")
+
+    # target lives in the metadata table; keep only labelled samples
+    y = meta[target]
+    shared = X.index.intersection(y.index)
+    if len(shared) > 2:
+        return None
+    X = X.loc[shared].copy()
+    y = y.loc[shared]
+    y.name = "target"
+
+    # raw salmon counts -> log1p so soft rules see a sane value range (TEST)
+    X = np.log(X.clip(lower=0))
+
+    return Dataset(
+        id=f"GEO-{id}",
+        source="geo_rnaseq",
+        name=candidate.name,
+        X=X,
+        y=y,
+        task_type=candidate.task_type,
+        metadata={**candidate.metadata, "licence": "public-domain", "transform": "log1p"},
+        domain="biological",
+    )
+
+
