@@ -24,7 +24,7 @@ env/
 data/
 !kaggle_loader.py
 !uci_loader.py
-
+!geo_rnaseq_loader.py
 #scripts
 scripts/
 
