@@ -105,7 +105,7 @@ def fetch(candidate):
     meta = pd.read_parquet(folder / f"{id}_metadata.parquet")
 
     # target lives in the metadata table; keep only labelled samples
-    y = meta[target]
+    y = meta[target].dropna()
     shared = X.index.intersection(y.index)
     if len(shared) > 2:
         return None
@@ -114,7 +114,7 @@ def fetch(candidate):
     y.name = "target"
 
     # raw salmon counts -> log1p so soft rules see a sane value range (TEST)
-    X = np.log(X.clip(lower=0))
+    X = np.log1p(X.clip(lower=0))
 
     return Dataset(
         id=f"GEO-{id}",
