@@ -69,23 +69,43 @@ def build_sankey(csv_path = "rule_stats.csv"): #creates a sankey plot of the har
     for n in labels:
         if n in sources:
             x = 0.0
-        elif n == "Accepted":
+        elif n in ("Accepted", "Rejected"):
             x = 1.0
-        elif n.startswith("Rejected "):
-            x = (rules.index(n.split()[1]) + 2) * step
         else:
             x = (rules.index(n.split()[0]) + 1) * step
         node_x.append(min(max(x, 0.001), 0.999))
 
+    # colors: passing funnel green, rejections red, distinct source/stage nodes
+    palette = ["#4C78A8", "#9D755D", "#B279A2", "#F58518", "#EECA3B", "#72B7B2"]  # no green (reserved for Accepted)
+    node_colors, ci = [], 0
+    for n in labels:
+        if n == "Accepted":
+            node_colors.append("#2CA02C")
+        elif n == "Rejected":
+            node_colors.append("#D62728")
+        else:
+            node_colors.append(palette[ci % len(palette)])
+            ci += 1
+    link_colors = ["rgba(150,150,150,0.35)"
+                   for a, b in flows]
+
+    # push Rejected to the bottom; keep the passing funnel up top
+    node_y = [0.92 if n == "Rejected" else 0.30 for n in labels]
+
     fig = go.Figure(go.Sankey(
         arrangement="snap",
-        node=dict(label=node_labels, x=node_x, pad=18, thickness=18),
+        node=dict(label=node_labels, x=node_x, y=node_y, pad=30, thickness=22,
+                  color=node_colors, line=dict(color="rgba(0,0,0,0.3)", width=0.5)),
         link=dict(
             source=[idx[a] for a, b in flows],
             target=[idx[b] for a, b in flows],
             value=list(flows.values()),
+            color=link_colors,
         ),
-    )).update_layout(title_text="Hard-rule funnel", font_size=12)
+    )).update_layout(
+        title_text="Hard-rule funnel", font_size=13,
+        width=1400, height=800, margin=dict(l=20, r=20, t=50, b=20),
+    )
     fig.write_html(csv_path.replace(".csv", ".html"))
     return fig
 
