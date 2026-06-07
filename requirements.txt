@@ -8,3 +8,4 @@ requests>=2.31
 kaggle>=1.6
 ucimlrepo>=0.0.7
 tabpfn >=0.1.0
+plotly>=5.0

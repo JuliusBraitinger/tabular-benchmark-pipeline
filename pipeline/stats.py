@@ -37,8 +37,8 @@ def save_csv(path="rule_stats.csv"):
 
 
 
-def build_sankey(out_html="hard_rules_sankey.html"): #creates a sankey plot of the hard rules 
-    df = to_dataframe() #get the dataframe of the rule results in the same run
+def build_sankey(csv_path = "rule_stats.csv"): #creates a sankey plot of the hard rules 
+    df = pd.read_csv(csv_path)
     rules = [r for r in RULE_ORDER if r in df.columns]
     stage = {r: f"{r} {RULE_NAME[r]}" for r in rules}
     flows = {} #count flow between named nodes
@@ -56,13 +56,23 @@ def build_sankey(out_html="hard_rules_sankey.html"): #creates a sankey plot of t
     labels = list(dict.fromkeys(n for pair in flows for n in pair))
     idx = {name: i for i, name in enumerate(labels)}
 
+    incoming = {n: 0 for n in labels}
+    outgoing = {n: 0 for n in labels}
+    for (a, b), v in flows.items():
+        outgoing[a] += v
+        incoming[b] += v
+    node_labels = [f"{n}: {max(incoming[n], outgoing[n])}" for n in labels]
+
     fig = go.Figure(go.Sankey(
-        node=dict(label=labels, pad=18, thickness=18),
+        node=dict(label=node_labels, pad=18, thickness=18),
         link=dict(
             source=[idx[a] for a, b in flows],
             target=[idx[b] for a, b in flows],
             value=list(flows.values()),
         ),
     )).update_layout(title_text="Hard-rule funnel", font_size=12)
-    fig.write_html(out_html)
+    fig.write_html(csv_path.replace(".csv", ".html"))
     return fig
+
+if __name__ == "__main__":
+    build_sankey()
