@@ -48,7 +48,7 @@ def build_sankey(csv_path = "rule_stats.csv"): #creates a sankey plot of the har
             flows.get((grp["source"].iloc[0], targets[0]), 0) + 1
         for i, r in enumerate(rules):
             failed = grp[r].dropna().astype(str).str.startswith("fail").any()
-            b = f"Rejected {r}" if failed else targets[i + 1]
+            b = "Rejected" if failed else targets[i + 1]
             flows[(targets[i], b)] = flows.get((targets[i], b), 0) + 1
             if failed:
                 break
@@ -81,16 +81,15 @@ def build_sankey(csv_path = "rule_stats.csv"): #creates a sankey plot of the har
     for n in labels:
         if n == "Accepted":
             node_colors.append("#2CA02C")
-        elif n == "Rejected":
+        elif n.startswith("Rejected"):
             node_colors.append("#D62728")
         else:
             node_colors.append(palette[ci % len(palette)])
             ci += 1
-    link_colors = ["rgba(150,150,150,0.35)"
-                   for a, b in flows]
+    link_colors = ["rgba(150,150,150,0.35)" for a, b in flows]
 
-    # push Rejected to the bottom; keep the passing funnel up top
-    node_y = [0.92 if n == "Rejected" else 0.30 for n in labels]
+    # push reject nodes to the bottom; keep the passing funnel up top
+    node_y = [0.92 if n.startswith("Rejected") else 0.30 for n in labels]
 
     fig = go.Figure(go.Sankey(
         arrangement="snap",
