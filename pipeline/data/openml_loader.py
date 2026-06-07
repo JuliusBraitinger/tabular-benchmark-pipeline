@@ -35,6 +35,7 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
     filtered = all_ds[
         (all_ds["NumberOfFeatures"] >= MIN_FEATURES)
         & (all_ds["NumberOfInstances"] >= MIN_ROWS)
+        & (all_ds["format"].str.lower() != "sparse_arff")  # sparse ARFF can't be parsed (openml+pandas2 bug)
     ].copy()
 
     logger.info("OpenML: %d total, %d after size filter", len(all_ds), len(filtered))
