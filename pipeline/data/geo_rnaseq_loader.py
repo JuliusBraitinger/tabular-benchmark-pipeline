@@ -97,17 +97,17 @@ def list_candidates(max_candidates=50):
 
 
 def fetch(candidate):
-    id = candidate.id
+    accessionId = candidate.id
     folder = Path(candidate.metadata["folder"])
     target = candidate.metadata["target_column"]
 
-    X = pd.read_parquet(folder / f"{id}_X.parquet")
-    meta = pd.read_parquet(folder / f"{id}_metadata.parquet")
+    X = pd.read_parquet(folder / f"{accessionId}_X.parquet")
+    meta = pd.read_parquet(folder / f"{accessionId}_metadata.parquet")
 
     # target lives in the metadata table; keep only labelled samples
     y = meta[target].dropna()
     shared = X.index.intersection(y.index)
-    if len(shared) > 2:
+    if len(shared) < 2:
         return None
     X = X.loc[shared].copy()
     y = y.loc[shared]
@@ -121,12 +121,12 @@ def fetch(candidate):
         y=y,
         task_type=candidate.task_type,
     )
-    stats.record(id, "geo_rnaseq", id, results)
+    stats.record(id, "geo_rnaseq", accessionId, results)
     if not hard_rules.all_passed(results):
         return None
     
     return Dataset(
-        id=f"GEO-{id}",
+        accessionId=f"GEO-{accessionId}",
         source="geo_rnaseq",
         name=candidate.name,
         X=X,
