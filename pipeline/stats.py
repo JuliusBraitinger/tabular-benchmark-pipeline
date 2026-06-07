@@ -43,13 +43,12 @@ def build_sankey(csv_path = "rule_stats.csv"): #creates a sankey plot of the har
     stage = {r: f"{r} {RULE_NAME[r]}" for r in rules}
     flows = {} #count flow between named nodes
     targets = [stage[r] for r in rules] + ["Accepted"]
-    flows = {}
     for _, grp in df.groupby("dataset_id"):
         flows[(grp["source"].iloc[0], targets[0])] = \
             flows.get((grp["source"].iloc[0], targets[0]), 0) + 1
         for i, r in enumerate(rules):
             failed = grp[r].dropna().astype(str).str.startswith("fail").any()
-            b = f"Rejected: {r}" if failed else targets[i + 1]
+            b = f"Rejected {r}" if failed else targets[i + 1]
             flows[(targets[i], b)] = flows.get((targets[i], b), 0) + 1
             if failed:
                 break
@@ -63,8 +62,24 @@ def build_sankey(csv_path = "rule_stats.csv"): #creates a sankey plot of the har
         incoming[b] += v
     node_labels = [f"{n}: {max(incoming[n], outgoing[n])}" for n in labels]
 
+    # explicit column per node so reject branches don't overlap the funnel
+    sources = set(df["source"])
+    step = 1 / (len(rules) + 1)
+    node_x = []
+    for n in labels:
+        if n in sources:
+            x = 0.0
+        elif n == "Accepted":
+            x = 1.0
+        elif n.startswith("Rejected "):
+            x = (rules.index(n.split()[1]) + 2) * step
+        else:
+            x = (rules.index(n.split()[0]) + 1) * step
+        node_x.append(min(max(x, 0.001), 0.999))
+
     fig = go.Figure(go.Sankey(
-        node=dict(label=node_labels, pad=18, thickness=18),
+        arrangement="snap",
+        node=dict(label=node_labels, x=node_x, pad=18, thickness=18),
         link=dict(
             source=[idx[a] for a, b in flows],
             target=[idx[b] for a, b in flows],
