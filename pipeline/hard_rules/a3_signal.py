@@ -1,24 +1,20 @@
-# A3: check if the dataset actually has a signal or if its just noise
+# A3: does the dataset have real predictive signal, or is it just noise?
 #
-# based on: Ojala & Garriga (2010) - "Permutation Tests for Studying Classifier Performance"
-# published in JMLR, vol 11, pages 1833-1863
+# Method (Ojala & Garriga 2010, "Permutation Tests for Studying Classifier
+# Performance", JMLR 11:1833-1863): train a random forest with cross-validation,
+# then re-score on 100 random label shuffles. p < 0.05 means the real score beats
+# the shuffled ones, so the signal is real. sklearn provides permutation_test_score.
 #
-# 
-# 1. train a random forest on the real labels with cross validation and get a score
-# 2. then shuffle the labels randomly 100 times and retrain each time
-# 3. if the real score is way better than the shuffled ones, theres actual signal
-# 4.  measure this with a p-value. p < 0.05 means the signal is real
+# Metric: classification uses adjusted balanced accuracy, regression uses R2
+# (both have chance = 0; see the threshold notes below).
 #
-# for classification use balanced_accuracy as metric, for regression R2
-# sklearn already provides permutation_test_score
-
-
-#TODO implement tappfn 2 um zu schauen ob das Signal ZU GUT ist -> dann flaggen bzw. wegschmeißen 
+# TODO: run TabPFN-2 to check whether the signal is TOO good -> flag / drop.
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.metrics import balanced_accuracy_score, make_scorer
 from sklearn.model_selection import cross_val_score, permutation_test_score
 from sklearn.preprocessing import LabelEncoder
 from tabpfn import TabPFNClassifier, TabPFNRegressor
@@ -26,13 +22,17 @@ from tabpfn import TabPFNClassifier, TabPFNRegressor
 from pipeline.hard_rules.base import RuleResult
 
 P_VALUE_THRESHOLD = 0.05  # signal must be statistically distinguishable from random
-# absolute-score floor: a dataset with p<0.05 but balanced_acc=0.16 (well above
-# random for many-class problems) still fails downstream sanity. Require both gates to keep
-# A3 aligned with the benchmark's actual usability bar.
-MIN_CLF_SCORE = 0.55
+# absolute-score floor (the "strong enough" gate, on top of the p-value).
+# Classification uses ADJUSTED balanced accuracy: (BA - 1/K) / (1 - 1/K), so chance = 0
+# and perfect = 1 regardless of the number of classes K. Raw balanced accuracy has chance
+# at 1/K, so a fixed 0.55 floor  rejected multiclass datasets that were far above
+# chance (e.g. 50-class amazon-commerce-reviews at BA=0.42 ≈ 21x chance).  adjustd
+# scale makes one threshold mean the same across binary/multiclass and matches regression's
+# R2 (chance = 0). See Brodersen et al. 2010; Ojala & Garriga 2010.
+MIN_CLF_SCORE = 0.10  # adjusted balanced accuracy (0 = chance, 1 = perfect)
 MIN_REG_SCORE = 0.05
-# dataset that scores near-perfect score -> reject it.
-MAX_CLF_SCORE = 0.98
+# dataset that scores near-perfect score -> reject it (trivial signal).
+MAX_CLF_SCORE = 0.95  # adjusted balanced accuracy
 MAX_REG_SCORE = 0.98
 N_PERMUTATIONS = 100
 N_ESTIMATORS = 50
@@ -69,12 +69,15 @@ def check_data(X, y, task_type="classification", **_kwargs):
         model = RandomForestClassifier(
             n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=42, n_jobs=-1
         )
-        scoring = "balanced_accuracy"
+        # adjusted=True -> chance-corrected (0 = random, 1 = perfect) regardless of #classes
+        scoring = make_scorer(balanced_accuracy_score, adjusted=True)
+        metric_name = "adj_balanced_accuracy"
     else:
         model = RandomForestRegressor(
             n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=42, n_jobs=-1
         )
         scoring = "r2"
+        metric_name = "r2"
 
     # subsampling
     if len(X) > 5000:
@@ -129,7 +132,7 @@ def check_data(X, y, task_type="classification", **_kwargs):
         reason = f"no signal (p={p_value:.3f}, score={real_score:.3f})"
     elif real_score < min_score:
         passed = False
-        reason = f"signal too weak ({scoring}={real_score:.3f} < {min_score})"
+        reason = f"signal too weak ({metric_name}={real_score:.3f} < {min_score})"
     elif real_score > max_score:
         # Tabpfn is exepensive -> only run it if RF has trivial signal
         tabpfn_score = tabpfn_scorer(X, y, task_type, scoring)
