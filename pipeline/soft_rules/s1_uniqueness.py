@@ -5,7 +5,9 @@
 # we do not call pymfe directly; we re-use the concept of summarizing per-column
 # moments into a fixed-length fingerprint, but the specific 28-dim vector
 # and cosine-similarity scoring are our own.
-
+#TODO vllt noch ein paar weitere stats hinzufügen ( missing values, wenn datei parquet gleich ist -> gleicher datensatz, checke auch zeilen etc )
+#subset detecion mit sortierung von werten pro zeile -> kein effect von feature scrample -> schaue auf intersection von den datensätzen 
+#datasets need to be thrown out und auch drauf achten wen subsets von datensätzen gleich sind -> mögen wir nicht 
 import numpy as np
 from scipy import stats as scipy_stats
 
