@@ -40,7 +40,7 @@ from kaggle.api.kaggle_api_extended import KaggleApi  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-CACHE_DIR = Path("/tmp/kaggle_cache")
+CACHE_DIR = Path(os.environ.get("PIPELINE_CACHE", "/tmp")) / "kaggle_cache"
 CROISSANT_URL = "https://www.kaggle.com/datasets/{ref}/croissant/download"
 HTTP_TIMEOUT = 30
 NOT_TABULAR_KEYWORDS = ["image", "audio", "pictures","video", "text", "nlp", "language", "time series", "timeseries"]

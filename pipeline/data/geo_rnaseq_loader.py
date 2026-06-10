@@ -17,7 +17,7 @@ from pipeline.hard_rules import runner as hard_rules  # hard rule checks
 # folder to scan for exports, under the project data dir like the other datasets
 # (override with GEO_RNASEQ_DIR env var)
 EXPORT_DIR = Path(os.environ.get("GEO_RNASEQ_DIR", "data/rnaseq"))
-CACHE_DIR = Path("/tmp/geo_rnaseq_cache")  
+CACHE_DIR = Path(os.environ.get("PIPELINE_CACHE", "/tmp")) / "geo_rnaseq_cache"  
 
 
 # pick the target column: classification with most labelled samples, else first regression

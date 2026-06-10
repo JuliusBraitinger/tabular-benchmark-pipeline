@@ -49,7 +49,7 @@ if NCBI_API_KEY:
 MIN_SAMPLES = 500  # GEO studies are typically smaller
 
 # where we cache GEOparse downloads so we don't re-download the same GSE
-CACHE_DIR = "/tmp/geoparse_cache"
+CACHE_DIR = os.path.join(os.environ.get("PIPELINE_CACHE", "/tmp"), "geoparse_cache")
 
 # regex patterns for spotting tumor vs normal labels in sample metadata.
 # we look for common keywords. this is rough but works for most GEO studies.
