@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -23,7 +24,7 @@ UCI_META_URL = "https://archive.ics.uci.edu/api/dataset"
 HTTP_TIMEOUT = 30
 
 # parquet cache for downloaded X/y, matching the other loaders
-CACHE_DIR = Path("data/cache/uci")
+CACHE_DIR = Path(os.environ.get("PIPELINE_DATA", "data")) / "cache" / "uci"
 
 
 def fetch_metadata(uci_id: int) -> dict | None:

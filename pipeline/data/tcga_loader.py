@@ -1,6 +1,7 @@
 """TCGA data loader - scrapes GDC metadata and downloads gene expression matrices."""
 import json
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -49,8 +50,8 @@ SKIP_LINES_PREFIX = {
 # cache the feature count for each workflow so we don't count the same thing twice
 _p_cache = {}
 
-# where to save raw X/y so we can skip the download next time
-CACHE_DIR = Path("data/cache/tcga")
+# where to save raw X/y so can skip the download next time
+CACHE_DIR = Path(os.environ.get("PIPELINE_DATA", "data")) / "cache" / "tcga"
 
 
 # --- GDC API wrappers ---

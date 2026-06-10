@@ -9,7 +9,9 @@ Flow: query API, filter by size, run hard rules, download.
 from __future__ import annotations
 
 import logging
+import os
 import time
+from pathlib import Path
 
 import openml
 import pandas as pd
@@ -20,6 +22,12 @@ from pipeline.hard_rules import runner as hard_rules  # hard rule checks
 from pipeline import stats  # for recording stats about the datasets we process
 
 logger = logging.getLogger(__name__)
+
+# put openml's own download cache on scratch too when PIPELINE_DATA is set (cluster);
+# otherwise leave openml's default (~/.openml). Native OPENML_CACHE_DIR still wins if set.
+_data_root = os.environ.get("PIPELINE_DATA")
+if _data_root and not os.environ.get("OPENML_CACHE_DIR"):
+    openml.config.set_root_cache_directory(str(Path(_data_root) / "openml_cache"))
 
 
 def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
