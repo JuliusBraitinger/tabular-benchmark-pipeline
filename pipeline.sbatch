@@ -1,10 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=pipeline
-#SBATCH --cpus-per-task=16          # max 24/node; A3's RandomForest uses n_jobs=-1
-#SBATCH --mem-per-cpu=8G            # ~128 GB total — TCGA methylation matrices are huge
-#SBATCH --partition=week           # day=24h; use week/month if including geo_array
-#SBATCH --gres=gpu:1               # for TabPFN; drop --gres to schedule faster (mostly CPU job)
-#SBATCH --time=72:00:00
+#SBATCH --cpus-per-task=16          
+#SBATCH --mem-per-cpu=8G            
+#SBATCH --partition=day            
+#SBATCH --time=12:00:00            
 #SBATCH --error=job.%J.err
 #SBATCH --output=job.%J.out
 #SBATCH --mail-type=ALL
