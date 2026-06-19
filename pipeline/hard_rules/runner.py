@@ -35,12 +35,13 @@ def run_metadata_checks( #different rules need different data inputs -> runner n
     source: str = "",
     name: str = "",
     metadata: dict | None = None,
+    skip: tuple[str, ...] = (),  # rule names to skip, e.g. ("A4",) for sources exempt from the size filter
 ) -> list[RuleResult]:
     """Run metadata-level hard rules. Returns list of results.
 
     A None result means the rule needs actual data to decide.
     """
-    kwargs = dict( #bundles all the metadata into a dictionary that can be looped for each rule 
+    kwargs = dict( #bundles all the metadata into a dictionary that can be looped for each rule
         n_samples=n_samples,
         n_features=n_features,
         task_type=task_type,
@@ -51,6 +52,8 @@ def run_metadata_checks( #different rules need different data inputs -> runner n
     )
     results: list[RuleResult] = []
     for _rule_name, check_fn in _METADATA_CHECKS: #actual check of the rules
+        if _rule_name in skip:
+            continue
         result = check_fn(**kwargs) #**kwargs is the dictionary with the metada. It can pick the relevant information for each rule and ignore the rest.
         if result is not None:
             results.append(result)
@@ -62,13 +65,16 @@ def run_metadata_checks( #different rules need different data inputs -> runner n
 def run_data_checks(
     X: pd.DataFrame,
     y: pd.Series,
-    task_type: str = "classification", #just a default value 
-    metadata: dict | None = None, #metadata thats in the dictionary 
+    task_type: str = "classification", #just a default value
+    metadata: dict | None = None, #metadata thats in the dictionary
+    skip: tuple[str, ...] = (),  # rule names to skip, e.g. ("A4",) for sources exempt from the size filter
 ) -> list[RuleResult]:
-    """Run data-level hard rules (A3 signal, A4 dimensions on actual data). NOT IMPLEMENTED YET"""
+    """Run data-level hard rules (A1/A2/A3/A4 on actual data)."""
     kwargs = dict(X=X, y=y, task_type=task_type, metadata=metadata or {})
     results: list[RuleResult] = []
     for _rule_name, check_fn in _DATA_CHECKS:
+        if _rule_name in skip:
+            continue
         result = check_fn(**kwargs)
         if result is not None:
             results.append(result)

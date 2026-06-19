@@ -60,7 +60,6 @@ def list_candidates(max_candidates=50):
         if task is None:
             continue  # no usable target
 
-        # metadata-level hard rules (A1/A2/A4/A5)
         results = hard_rules.run_metadata_checks(
             n_samples=info.get("n_samples"),
             n_features=info.get("n_genes"),
@@ -68,6 +67,7 @@ def list_candidates(max_candidates=50):
             licence="public-domain",
             source="geo_rnaseq",
             name=acc,
+            skip=("A4",),
         )
         stats.record(acc, "geo_rnaseq", acc, results)
         if not hard_rules.all_passed(results):
@@ -120,13 +120,14 @@ def fetch(candidate):
         X=X,
         y=y,
         task_type=candidate.task_type,
+        skip=("A4",),  # RNA-seq is sample-poor; size filter excluded for this source
     )
-    stats.record(id, "geo_rnaseq", accessionId, results)
+    stats.record(accessionId, "geo_rnaseq", accessionId, results)
     if not hard_rules.all_passed(results):
         return None
-    
+
     return Dataset(
-        accessionId=f"GEO-{accessionId}",
+        id=f"GEO-{accessionId}",
         source="geo_rnaseq",
         name=candidate.name,
         X=X,
