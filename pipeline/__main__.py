@@ -64,7 +64,7 @@ def main() -> None:
 
     # Phase 1: scrape candidates (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
-    candidates = registry.list_candidates(sources=["uci"], max_per_source=30)
+    candidates = registry.list_candidates(sources=["geo_rnaseq"], max_per_source=30)
     
     log.info("Got %d candidates", len(candidates))
 
@@ -86,8 +86,6 @@ def main() -> None:
             continue
 
         # A6: reject if this dataset duplicates one already accepted.
-        # Record under candidate.id (the key the loaders used) so the result
-        # joins the dataset's other rule rows and A6 shows up in the Sankey.
         a6_result = a6_cross_duplicate.check(ds, a6_pool)
         stats.record(candidate.id, candidate.source, candidate.name, [a6_result])
         if not a6_result.passed:
@@ -106,6 +104,7 @@ def main() -> None:
             break
 
     stats.save_csv("rule_stats.csv")
+    stats.build_sankey("rule_stats.csv").write_html("rule_stats_sankey.html")
     log.info("%d datasets saved to %s. Saved rule_stats.csv.", len(saved_dirs), OUTPUT_DIR)
 
     if not saved_dirs:
