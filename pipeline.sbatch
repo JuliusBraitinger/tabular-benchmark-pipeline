@@ -18,8 +18,9 @@ export PIPELINE_CACHE="$SCRATCH"        # throwaway download caches (geoparse/ka
 export PIPELINE_DATA="$SCRATCH/data"    # datasets, tcga/uci/openml caches, rule_stats/soft_stats/html
 
 export GEO_RNASEQ_DIR="$HOME/data/rnaseq"   # not in .env; only if you uploaded RNA-seq exports
+export TABPFN_MODEL_CACHE_DIR="$HOME/masterthesis/tabpfn_cache"  # pre-warmed v2 weights on /home
 source "$HOME/miniconda3/etc/profile.d/conda.sh"
-conda activate tcml
+conda activate pipeline
 
 cd "$SLURM_SUBMIT_DIR"                  # run from the cloned repo
 python -m pipeline
