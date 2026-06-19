@@ -67,7 +67,7 @@ def main() -> None:
 
     # Phase 1: scrape candidates (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
-    candidates = registry.list_candidates(sources=["openml", "tcga", "uci", "geo_rnaseq"], max_per_source=50)
+    candidates = registry.list_candidates(sources=["geo_rnaseq"], max_per_source=50)
 
     log.info("Got %d candidates", len(candidates))
 
