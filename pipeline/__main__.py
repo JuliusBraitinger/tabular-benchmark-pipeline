@@ -85,8 +85,11 @@ def main() -> None:
         if ds is None:
             continue
 
-        # A6: reject if this dataset duplicates one already accepted
+        # A6: reject if this dataset duplicates one already accepted.
+        # Record under candidate.id (the key the loaders used) so the result
+        # joins the dataset's other rule rows and A6 shows up in the Sankey.
         a6_result = a6_cross_duplicate.check(ds, a6_pool)
+        stats.record(candidate.id, candidate.source, candidate.name, [a6_result])
         if not a6_result.passed:
             log.info("  A6 rejected %s: %s", ds.id, a6_result.reason)
             del ds
