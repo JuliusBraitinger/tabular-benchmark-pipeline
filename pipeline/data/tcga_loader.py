@@ -24,7 +24,6 @@ ACCEPTED_WORKFLOWS = {
     "Gene Expression Quantification": [
         "STAR - Counts", "HTSeq - Counts", "HTSeq - FPKM", "HTSeq - FPKM-UQ",
     ],
-    "Methylation Beta Value": ["SeSAMe Methylation Beta Estimation"],
     "Copy Number Segment": ["DNAcopy"],
     "miRNA Expression Quantification": ["BCGSC miRNA Profiling"],
 }
