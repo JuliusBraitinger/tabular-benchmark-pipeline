@@ -46,7 +46,6 @@ sanity_check.py
 # Data artifacts
 *.csv
 *.json
-*.html
 !pyproject.toml
 
 # Generated figures (plotly inlines ~4MB plotly.js per file)
