@@ -29,7 +29,7 @@ def check_data(
 ) -> RuleResult | None:
     # Infer task type from the target variable when metadata said 'unknown'.
     # The inferred task is carried in details['inferred_task'] so callers can use it downstream.
-    if _normalise(task_type) != "unknown":
+    if normalise(task_type) != "unknown":
         return None  # already resolved at metadata phase -> skip check
 
     if y is None or y.empty:
