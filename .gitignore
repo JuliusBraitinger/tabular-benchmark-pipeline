@@ -48,3 +48,6 @@ sanity_check.py
 *.json
 *.html
 !pyproject.toml
+
+# Generated figures (plotly inlines ~4MB plotly.js per file)
+*.html

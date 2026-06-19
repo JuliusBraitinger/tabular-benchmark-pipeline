@@ -1,7 +1,8 @@
 > **Status: work in progress.** This pipeline is under active development and
->  contains bugs. It is not yet set up to run on the university's SLURM
-> cluster. Everything here assumes a local environment. If you're using this
-> package, expect rough edges and interfaces that may still change.
+> contains bugs. The main curation pipeline (`python -m pipeline`) assumes a
+> local environment; the GEO RNA-seq export pipeline that feeds the
+> `geo_rnaseq` loader runs on the university's SLURM cluster (see the `tcml`
+> branch). Expect rough edges and interfaces that may still change.
 
 # Pipeline Architecture
 
@@ -13,16 +14,20 @@ A visual overview of what each file does and how they work together.
 python -m pipeline      # runs pipeline/__main__.py
 ```
 
-`__main__.py` orchestrates the whole run in two phases. Datasets are streamed
-to disk between phases so RAM stays bounded to one dataset at a time.
+`__main__.py` orchestrates the run as logged stages (labelled Phase 1, 2, and 4
+in the code). Datasets are streamed to disk between stages so RAM stays bounded
+to one dataset at a time.
 
-1. **Scrape + fetch** — `registry.list_candidates()` collects candidates from every
-   loader, then `registry.fetch()` downloads each survivor. Each fetched
-   `Dataset` is persisted under `data/datasets/{id}/` as `X.parquet`,
-   `y.parquet`, `meta.pkl` and immediately released from memory.
-2. **Soft rules** — every saved dataset is reloaded one at a time and scored
-   by S1–S6. Results land in `soft_stats.csv`. Hard-rule stats from phase 1
-   land in `rule_stats.csv`.
+1. **Phase 1 — scrape** — `registry.list_candidates()` collects candidates from
+   every loader, each running the cheap metadata hard rules (A1/A2/A4/A5).
+2. **Phase 2 — fetch + save** — `registry.fetch()` downloads each survivor and
+   runs the data hard rules (A1/A2/A3/A4); `__main__` then applies **A6**
+   (cross-dataset duplicate check) before persisting the `Dataset` under
+   `data/datasets/{id}/` as `X.parquet`, `y.parquet`, `meta.pkl` and releasing
+   it from memory. Stops at `MAX_SAVED_DATASETS` (100). Writes `rule_stats.csv`.
+3. **Phase 4 — soft rules** — every saved dataset is reloaded one at a time and
+   scored by S1–S6 (S1 first needs the pre-computed fingerprint pool). Results
+   land in `soft_stats.csv`.
 
 ## File Map & Dependencies
 
@@ -42,7 +47,7 @@ to disk between phases so RAM stays bounded to one dataset at a time.
 │                                                                              │
 │   list_candidates()  ──▶ calls each loader's list_candidates()               │
 │   fetch(candidate)   ──▶ routes to the right loader's fetch()                │
-│   _LOADERS = {openml, tcga, geo_array, kaggle, uci}                          │
+│   _LOADERS = {openml, tcga, geo_array, geo_rnaseq, kaggle, uci}              │
 └─────────────────────────────────────────────────────────────────────────────┘
         │              │              │              │              │
         ▼              ▼              ▼              ▼              ▼
@@ -66,7 +71,7 @@ to disk between phases so RAM stays bounded to one dataset at a time.
    │                     ═══ RULE ORCHESTRATOR ═══                        │
    │                                                                      │
    │   _METADATA_CHECKS = [A1, A2, A4, A5]  ← cheap, metadata-only        │
-   │   _DATA_CHECKS     = [A3, A4]          ← needs downloaded data       │
+   │   _DATA_CHECKS     = [A1, A2, A3, A4]  ← needs downloaded data       │
    │                                                                      │
    │   run_metadata_checks(**kwargs) → loops and calls each rule          │
    │   run_data_checks(X, y, ...)    → loops and calls each rule          │
@@ -134,7 +139,7 @@ one at a time and runs the soft rules:
    │ unique  │ │  IID    │ │ quality │ │ leakage │ │ batch   │ │ class   │
    │ -ness   │ │         │ │         │ │         │ │ effects │ │ balance │
    │         │ │         │ │         │ │         │ │         │ │         │
-   │ stat    │ │ exact   │ │ miss /  │ │ TODO    │ │   TODO  │ │shannon  │
+   │ stat    │ │ exact   │ │ miss /  │ │ pred-gap│ │   TODO  │ │shannon  │
    │ finger- │ │duplicate│ │ const / │ │         │ │         │ │entropy  │
    │ print + │ │ rows on │ │ outliers│ │         │ │         │ │         │
    │ cosine  │ │ (X | y) │ │ consist │ │         │ │         │ │         │
@@ -154,16 +159,40 @@ S1 is a special case — it needs the pool of all fingerprints, so `__main__`
 pre-computes them once before the per-dataset loop. The other rules are
 pool-free and run in the same loop.
 
+## Data Sources
+
+Six loaders feed the dispatcher, each owning its own scrape → fetch path:
+
+| Source | Loader | Access | Target |
+|--------|--------|--------|--------|
+| `openml` | `openml_loader.py` | OpenML API | already defined (skips `sparse_arff`) |
+| `tcga` | `tcga_loader.py` | GDC API | sample_type (tumor/normal), vital_status fallback |
+| `geo_array` | `geo_array_loader.py` | Entrez + GEOparse | built from sample text — **slow scrape** |
+| `geo_rnaseq` | `geo_rnaseq_loader.py` | local Parquet exports | classification col with most labels |
+| `kaggle` | `kaggle_loader.py` | Kaggle API | heuristic detection |
+| `uci` | `uci_loader.py` | ucimlrepo | already defined |
+
+**`geo_rnaseq` is new and unlike the others — it has no live API.** It reads
+Parquet exports (`<ACC>_X.parquet`, `<ACC>_metadata.parquet`, `<ACC>_info.json`)
+produced offline by the Nextflow RNA-seq pipeline
+(`rnaseq_pipeline/build_tabular.py`), scanned from `data/rnaseq/` (override with
+the `GEO_RNASEQ_DIR` env var). That export pipeline runs on the SLURM cluster
+(`tcml` branch): each GEO study is fetched from SRA, pseudo-aligned with Salmon,
+and collapsed to a gene-count matrix (always `P = 29607` genes against GRCh38,
+capped at `MAX_SAMPLES` rows). The loader still runs the full hard-rule chain
+(A1/A2/A4/A5 then A3/A4), so small-N cohorts fail A4 under `MIN_ROWS = 1000`.
+
 ## End-to-End Flow
 
 ```
    registry.list_candidates(sources=[…])
            │
-           ├─▶ openml_loader.list_candidates() ─┐
-           ├─▶ tcga_loader.list_candidates()   ─┤
-           ├─▶ geo_loader.list_candidates()    ─┼─ each runs metadata
-           ├─▶ kaggle_loader.list_candidates() ─┤    hard rules
-           └─▶ uci_loader.list_candidates()    ─┘
+           ├─▶ openml_loader.list_candidates()     ─┐
+           ├─▶ tcga_loader.list_candidates()       ─┤
+           ├─▶ geo_array_loader.list_candidates()  ─┤
+           ├─▶ geo_rnaseq_loader.list_candidates() ─┼─ each runs metadata
+           ├─▶ kaggle_loader.list_candidates()     ─┤    hard rules
+           └─▶ uci_loader.list_candidates()        ─┘
                               │
                               ▼
                 [list of CandidateInfo objects]
@@ -172,6 +201,7 @@ pool-free and run in the same loop.
               for candidate in candidates:
                   ds = registry.fetch(candidate)   # runs data hard rules
                   if ds is None: continue
+                  if a6_cross_duplicate.check(ds, pool) fails: continue  # A6
                   save(ds → data/datasets/{id}/)   # parquet + pickle
                   del ds                            # free RAM
                               │
@@ -199,8 +229,8 @@ pool-free and run in the same loop.
 |------|--------|----------------|
 | S1 Uniqueness     | 10 | per-column moment fingerprint (mean/std/skew/kurt) → cosine vs pool |
 | S2 IID            | 10 | strict exact-duplicate rows on `(X | y)` via row hashing |
-| S3 Data Quality   | 15 | composite: completeness, consistency, outliers (IF), constant + quasi-constant features |
-| S4 Data Leakage   | 20 | per-feature predictive stat (Mann-Whitney / Spearman); group k-fold + MI spike planned |
+| S3 Data Quality   | 15 | composite: completeness, consistency, outliers (IsolationForest), constant features |
+| S4 Data Leakage   | 20 | implemented — per-feature predictive-gap detection: worst vs median feature stat (Mann-Whitney / Spearman); low score when one feature sticks out far above the bulk (leak), high when signal is spread (biology). Optional group k-fold leak test is a future add-on |
 | S5 Batch Effects  |  – | **stub** — returns 1.0; needs batch labels we don't reliably have |
 | S6 Class Balance  |  5 | normalized Shannon entropy of class distribution |
 | S7 Domain-QC      |  – | **placeholder** — too domain-specific to automate generically |
@@ -215,7 +245,7 @@ cleanliness signal, and keeping them in both rules would double-count.
 |------|--------|
 | A1 Task type        | implemented (classification/regression, infers from target if unknown) |
 | A2 Synthetic check  | implemented (regex on name/tags + `make_*` sklearn generators; TCGA + GEO auto-pass) |
-| A3 Signal           | implemented (permutation RF on `balanced_accuracy`/R²; TabPFN second-opinion for trivial signals) |
+| A3 Signal           | implemented (permutation RF on **adjusted** balanced accuracy / R² — chance-corrected so the floor means the same for binary, multiclass, and regression; TabPFN second-opinion for trivial signals) |
 | A4 Dimensions       | implemented (N ≥ MIN_ROWS, P ≥ MIN_FEATURES; both metadata and data checks) |
 | A5 Licence          | implemented (normalises string, rejects NC/ND, allow-list) |
 | A6 Cross-duplicates | implemented (row-sort + bytes-hash; rejects if overlap with already-accepted dataset > threshold) |
@@ -231,9 +261,30 @@ For the heterogeneous sources, `data/base.py:infer_domain(name, tags, descriptio
 runs a keyword regex to upgrade `"general"` candidates to biomedical/biological
 when titles mention cancer, gene expression, methylation, etc.
 
+## Visualization
+
+`stats.build_sankey(csv_path="rule_stats.csv")` renders the hard-rule funnel as
+a Sankey diagram: each source flows source → A1 → A2 → A4 → A5 → A3 → Accepted,
+with every rule's rejections draining into a single `Rejected` node. Counts are
+shown in the node labels, and it writes `<csv>.html`. plotly is imported lazily
+so the pipeline still imports without it (`kaleido` is only needed for PDF
+export). Note: A6 cross-duplicate rejections are not recorded to `stats`, so
+they do not appear in the Sankey.
+
+## CRITIC Weight Validation
+
+`pipeline/critic/` derives objective soft-rule weights from the score matrix and
+compares them to the AHP baseline, run separately from the main pipeline:
+
+- `critic.py` — the CRITIC method (min-max normalize → contrast intensity →
+  conflict → informativeness → weights). Constant columns (e.g. S5) carry no
+  signal and fall back to AHP.
+- `score.py` — per-dataset CRITIC scores from the weight vector.
+- `calibrate.py` — weight calibration helpers.
+
 ## Testing
 
-Quick smoke test for any loader — runs `list_candidates` against the real API and stops after the first candidate that passes metadata hard rules. Swap `tcga_loader` for `openml_loader`, `geo_array_loader`, `kaggle_loader`, or `uci_loader` to test the others.
+Quick smoke test for any loader — runs `list_candidates` against the real API and stops after the first candidate that passes metadata hard rules. Swap `tcga_loader` for `openml_loader`, `geo_array_loader`, `kaggle_loader`, or `uci_loader` to test the others. (`geo_rnaseq_loader` reads local Parquet from `data/rnaseq/` instead of an API — point `GEO_RNASEQ_DIR` at your exports first.)
 
 ```bash
 python -c "

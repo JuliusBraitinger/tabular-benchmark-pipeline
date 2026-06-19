@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 
 _rows = []
 
-RULE_ORDER = ["A1", "A2", "A4", "A5", "A3", "A6"]
+RULE_ORDER = ["A1", "A2", "A3", "A4", "A5", "A6"]
 RULE_NAME = {"A1": "task type", "A2": "synthetic", "A3": "signal",
              "A4": "dimensions", "A5": "licence", "A6": "cross-dup"}
 
@@ -43,6 +43,9 @@ def build_sankey(csv_path = "rule_stats.csv"): #creates a sankey plot of the har
     stage = {r: f"{r} {RULE_NAME[r]}" for r in rules}
     flows = {} #count flow between named nodes
     targets = [stage[r] for r in rules] + ["Accepted"]
+    # Pure funnel: every dataset walks the rules in numeric order and drops out
+    # at the FIRST rule that rejected it (phase is irrelevant — a rule that never
+    # ran on a dataset just isn't a "fail", so the dataset passes through it).
     for _, grp in df.groupby("dataset_id"):
         flows[(grp["source"].iloc[0], targets[0])] = \
             flows.get((grp["source"].iloc[0], targets[0]), 0) + 1

@@ -32,7 +32,7 @@ P_VALUE_THRESHOLD = 0.05  # signal must be statistically distinguishable from ra
 MIN_CLF_SCORE = 0.10  # adjusted balanced accuracy (0 = chance, 1 = perfect)
 MIN_REG_SCORE = 0.05
 # dataset that scores near-perfect score -> reject it (trivial signal).
-MAX_CLF_SCORE = 0.95  # adjusted balanced accuracy
+MAX_CLF_SCORE = 0.98  # adjusted balanced accuracy
 MAX_REG_SCORE = 0.98
 N_PERMUTATIONS = 100
 N_ESTIMATORS = 50
