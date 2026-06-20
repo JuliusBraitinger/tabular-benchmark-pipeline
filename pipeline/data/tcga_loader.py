@@ -299,6 +299,7 @@ def list_candidates(max_candidates=100):
                 licence="public",
                 source="tcga",
                 name=f"{project_id} {cancer_type}",
+                skip=("A4",),  # TCGA is sample-poor/feature-rich; exempt from the N>=1000 size filter
             )
             stats.record(project_id, "tcga", cancer_type + " - " + dt, results)
 
@@ -410,8 +411,8 @@ def fetch(candidate):
     for col in CLINICAL_COLS:
         X[col] = [clinical.get(case_id_map.get(fid, ""), {}).get(col, None) for fid in X.index]
 
-    # Step 4: expensive data-level hard rules
-    data_results = hard_rules.run_data_checks(X, y, task_type=candidate.task_type)
+    # Step 4: expensive data-level hard rules (A4 skipped: TCGA exempt from the N>=1000 size filter)
+    data_results = hard_rules.run_data_checks(X, y, task_type=candidate.task_type, skip=("A4",))
     stats.record(project_id, "tcga", candidate.name, data_results)
     failed = hard_rules.failed_rules(data_results)
     if failed:

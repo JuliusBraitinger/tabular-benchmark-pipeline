@@ -54,8 +54,13 @@ def list_candidates(
             logger.warning("Unknown source: %s", source)
             continue
         logger.info("Scraping %s...", source)
-        # dispatch: call the right loader's list function (loader imported lazily here)
-        candidates = _loader(source).list_candidates(max_candidates=max_per_source)
+        # dispatch: call the right loader's list function (loader imported lazily here).
+        # one source failing (network/DNS/import) must not abort the whole run -> skip it.
+        try:
+            candidates = _loader(source).list_candidates(max_candidates=max_per_source)
+        except Exception:
+            logger.exception("scraping %s failed, skipping this source", source)
+            continue
         all_candidates.extend(candidates)
         logger.info("%s: %d candidates", source, len(candidates))
 
