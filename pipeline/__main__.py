@@ -68,8 +68,11 @@ def main() -> None:
     # Phase 1: scrape candidates (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
     candidates = registry.list_candidates(
-        sources=["openml", "tcga", "uci", "geo_rnaseq"], max_per_source=200
+        sources=["openml", "tcga", "uci", "geo_rnaseq"], max_per_source=100
     )
+    # geo_array scrape is slow (one Series Matrix download per study), so cap it
+    # tighter than the fast sources — separate call since max_per_source is shared.
+    candidates += registry.list_candidates(sources=["geo_array"], max_per_source=25)
 
     log.info("Got %d candidates", len(candidates))
 
