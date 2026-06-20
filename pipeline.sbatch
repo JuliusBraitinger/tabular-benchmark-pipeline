@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=pipeline
-#SBATCH --cpus-per-task=16          
-#SBATCH --mem-per-cpu=8G            
-#SBATCH --partition=day            
-#SBATCH --time=12:00:00            
+#SBATCH --cpus-per-task=24
+#SBATCH --mem-per-cpu=9G            
+#SBATCH --partition=week            
+#SBATCH --time=7-00:00:00            
 #SBATCH --error=job.%J.err
 #SBATCH --output=job.%J.out
 #SBATCH --mail-type=ALL
@@ -21,10 +21,17 @@ export TABPFN_MODEL_CACHE_DIR="$HOME/masterthesis/tabpfn_cache"  # pre-warmed v2
 source "$HOME/miniconda3/etc/profile.d/conda.sh"
 conda activate pipeline
 
-cd "$SLURM_SUBMIT_DIR"                  # run from the cloned repo
-python -m pipeline
+cd "$SLURM_SUBMIT_DIR"   
 
 DEST="$HOME/results/$SLURM_JOB_ID"
 mkdir -p "$DEST"
-cp -R "$PIPELINE_DATA"/. "$DEST/"       # datasets + all csv/html, one shot
+# mirror scratch -> home every 30 min, so a crash/timeout doesnt kill everything 
+( while true; 
+do rsync -a "$PIPELINE_DATA"/ "$DEST/" || true; sleep 1800; done ) &
+SYNC_PID=$!
+
+python -m pipeline
+
+kill "$SYNC_PID" 2>/dev/null || true
+rsync -a "$PIPELINE_DATA"/ "$DEST/"     # final catch-up after a clean finish
 echo "results copied to $DEST"

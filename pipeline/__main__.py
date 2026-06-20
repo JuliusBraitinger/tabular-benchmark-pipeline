@@ -27,7 +27,7 @@ from pipeline.soft_rules import s6_class_balance as s6
 OUTPUT_DIR = Path(os.environ.get("PIPELINE_DATA", "data")) / "datasets"
 # rule_stats/soft_stats/sankey land here: under PIPELINE_DATA on the cluster, cwd locally
 RESULTS_DIR = Path(os.environ.get("PIPELINE_DATA", "."))
-MAX_SAVED_DATASETS = 100  # stop fetching once this many datasets pass ALL hard rules
+MAX_SAVED_DATASETS = 600  # total cap across all sources; ~100/source target after A3/A6 rejections
 
 
 def _save_dataset(ds: Dataset, output_dir: Path) -> Path:
@@ -67,7 +67,9 @@ def main() -> None:
 
     # Phase 1: scrape candidates (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
-    candidates = registry.list_candidates(sources=["geo_rnaseq"], max_per_source=50)
+    candidates = registry.list_candidates(
+        sources=["openml", "tcga", "uci", "geo_rnaseq"], max_per_source=200
+    )
 
     log.info("Got %d candidates", len(candidates))
 
