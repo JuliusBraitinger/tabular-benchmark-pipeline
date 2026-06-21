@@ -64,33 +64,59 @@ NORMAL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-def _find_best_characteristic(all_characteristics: dict) -> str | None
-    #Pick the best characteristic as a classification target.
+# Keywords for scoring characteristics as classification targets
+PHENOTYPE_KEYWORDS = [
+    "disease", "condition", "phenotype", "status", "type", "subtype",
+    "stage", "grade", "class", "diagnosis", "outcome", "response",
+    "treatment", "pathology", "clinical", "category", "group",
+]
+METADATA_KEYWORDS = [
+    "age", "gender", "sex", "batch", "plate", "technician", "date",
+    "passage", "lot", "replicate", "time.point", "timepoint", "time",
+    "sample.id", "id", "name", "donor", "patient", "individual",
+]
 
-    
-    best_char = None
-    best_coverage = 0
 
-    for char_name, values in all_characteristics.items():
-        if not values:
-            continue
+def _score_characteristic(char_name: str, values: list[str]) -> float:
+    """Score how good a characteristic is as a classification target.
 
-        # Count unique non-empty values
-        unique_vals = set(v for v in values if v and str(v).strip())
-        n_unique = len(unique_vals)
+    Good targets have 2-50 unique values, balanced distribution, high coverage,
+    and phenotype-like names (not metadata like age/batch).
+    """
+    if not values or not char_name:
+        return 0.0
 
-        # Need 2-50 classes for classification
-        if n_unique < 2 or n_unique > 50:
-            continue
+    # Count unique non-empty values
+    unique_vals = [v for v in values if v and str(v).strip()]
+    n_unique = len(set(unique_vals))
 
-        # Prefer characteristics that appear in most samples
-        coverage = len([v for v in values if v]) / len(values)
+    # Outside the sweet spot for classification
+    if n_unique < 2 or n_unique > 50:
+        return 0.0
 
-        if coverage > best_coverage:
-            best_coverage = coverage
-            best_char = char_name
+    # Balance: penalize imbalanced classes (e.g., 95% class A, 5% class B)
+    if len(unique_vals) > 0:
+        counts = pd.Series(unique_vals).value_counts()
+        balance = counts.min() / counts.max() if len(counts) > 0 else 0
+    else:
+        balance = 0
 
-    return best_char
+    # Coverage: what % of samples have this characteristic
+    coverage = len(unique_vals) / len(values) if len(values) > 0 else 0
+
+    # Base score combines unique values, balance, and coverage
+    base_score = n_unique * balance * coverage
+
+    # Boost phenotype-like characteristics
+    char_lower = char_name.lower()
+    if any(kw in char_lower for kw in PHENOTYPE_KEYWORDS):
+        base_score *= 2.0
+
+    # Penalize metadata-like characteristics
+    if any(kw in char_lower for kw in METADATA_KEYWORDS):
+        base_score *= 0.1
+
+    return base_score
 
 
 # GEO search queries (we loop over all of them and combine the results).
@@ -219,10 +245,19 @@ def _parse_geoparse_metadata(accession):
         result["n_classes"] = 2
         result["class_labels"] = "normal, tumor"
     else:
-        # Try to find any good characteristic (2-50 unique values)
-        best_char = _find_best_characteristic(all_characteristics)
-        if best_char is not None:
-            unique_vals = set(v for v in all_characteristics[best_char] if v)
+        # Score all characteristics and pick the best one
+        best_char = None
+        best_score = 0.0
+        best_values = []
+        for char_name, values in all_characteristics.items():
+            score = _score_characteristic(char_name, values)
+            if score > best_score:
+                best_score = score
+                best_char = char_name
+                best_values = values
+
+        if best_char is not None and len(best_values) > 0:
+            unique_vals = set(v for v in best_values if v)
             if 2 <= len(unique_vals) <= 50:
                 result["task_type"] = "classification"
                 result["n_classes"] = len(unique_vals)
@@ -467,8 +502,14 @@ def fetch(candidate):
             else:
                 all_characteristics.setdefault("_unparsed", []).append(char)
 
-    # Second pass: find the best characteristic (2-50 unique values, high coverage)
-    best_char = _find_best_characteristic(all_characteristics)
+    # Second pass: score characteristics and pick the best one
+    best_char = None
+    best_score = 0.0
+    for char_name, values in all_characteristics.items():
+        score = _score_characteristic(char_name, values)
+        if score > best_score:
+            best_score = score
+            best_char = char_name
 
     # Third pass: assign labels using tumor/normal regex OR best characteristic
     for gsm_id, gsm in gse.gsms.items():

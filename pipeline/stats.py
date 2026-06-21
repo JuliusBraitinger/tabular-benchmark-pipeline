@@ -40,8 +40,6 @@ def save_csv(path="rule_stats.csv"):
 def build_sankey(csv_path = "rule_stats.csv"): #creates a sankey plot of the hard rules
     df = pd.read_csv(csv_path)
 
-    # Deduplicate: keep only the first occurrence of each dataset_id
-    # (handles TCGA naming inconsistency: TCGA-BRCA vs TCGA-BRCA_Gene-Expression-Quantification)
     df = df.drop_duplicates(subset=["dataset_id"], keep="first")
 
     rules = [r for r in RULE_ORDER if r in df.columns]
