@@ -547,6 +547,9 @@ def fetch(candidate):
             logger.warning("%s: no expression data found", accession)
             return None
 
+    # Filter out samples with missing/None labels
+    labels = {k: v for k, v in labels.items() if v}
+
     y = pd.Series(labels, name="target")
 
     shared = X.index.intersection(y.index)
