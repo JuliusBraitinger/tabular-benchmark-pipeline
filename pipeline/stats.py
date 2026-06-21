@@ -37,15 +37,15 @@ def save_csv(path="rule_stats.csv"):
 
 
 
-def build_sankey(csv_path = "rule_stats.csv"): #creates a sankey plot of the hard rules 
+def build_sankey(csv_path = "rule_stats.csv"): #creates a sankey plot of the hard rules
     df = pd.read_csv(csv_path)
+
+    df = df.drop_duplicates(subset=["dataset_id"], keep="first")
+
     rules = [r for r in RULE_ORDER if r in df.columns]
     stage = {r: f"{r} {RULE_NAME[r]}" for r in rules}
     flows = {} #count flow between named nodes
     targets = [stage[r] for r in rules] + ["Accepted"]
-    # Pure funnel: every dataset walks the rules in numeric order and drops out
-    # at the FIRST rule that rejected it (phase is irrelevant — a rule that never
-    # ran on a dataset just isn't a "fail", so the dataset passes through it).
     for _, grp in df.groupby("dataset_id"):
         flows[(grp["source"].iloc[0], targets[0])] = \
             flows.get((grp["source"].iloc[0], targets[0]), 0) + 1

@@ -4,6 +4,7 @@ Run with:  python -m pipeline
 from __future__ import annotations
 
 import logging
+import os
 import pickle
 import time
 from pathlib import Path
@@ -23,8 +24,10 @@ from pipeline.soft_rules import s5_batch_effects as s5
 from pipeline.soft_rules import s6_class_balance as s6
 
 
-OUTPUT_DIR = Path("data/datasets")
-MAX_SAVED_DATASETS = 100  # stop fetching once this many datasets pass ALL hard rules
+OUTPUT_DIR = Path(os.environ.get("PIPELINE_DATA", "data")) / "datasets"
+# rule_stats/soft_stats/sankey land here: under PIPELINE_DATA on the cluster, cwd locally
+RESULTS_DIR = Path(os.environ.get("PIPELINE_DATA", "."))
+MAX_SAVED_DATASETS = 600  # total cap across all sources; ~100/source target after A3/A6 rejections
 
 
 def _save_dataset(ds: Dataset, output_dir: Path) -> Path:
@@ -64,8 +67,13 @@ def main() -> None:
 
     # Phase 1: scrape candidates (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
-    candidates = registry.list_candidates(sources=["geo_rnaseq"], max_per_source=30)
-    
+    candidates = registry.list_candidates(
+        sources=["openml", "tcga", "uci", "geo_rnaseq"], max_per_source=100
+    )
+    # geo_array scrape is slow (one Series Matrix download per study), so cap it
+    # tighter than the fast sources — separate call since max_per_source is shared.
+    candidates += registry.list_candidates(sources=["geo_array"], max_per_source=25)
+
     log.info("Got %d candidates", len(candidates))
 
     # Phase 2: fetch each dataset, save to disk, then drop from memory.
@@ -103,8 +111,9 @@ def main() -> None:
             log.info("Reached MAX_SAVED_DATASETS=%d, stopping fetch loop", MAX_SAVED_DATASETS)
             break
 
-    stats.save_csv("rule_stats.csv")
-    stats.build_sankey("rule_stats.csv").write_html("rule_stats_sankey.html")
+    rule_csv = str(RESULTS_DIR / "rule_stats.csv")
+    stats.save_csv(rule_csv)
+    stats.build_sankey(rule_csv).write_html(str(RESULTS_DIR / "rule_stats_sankey.html"))
     log.info("%d datasets saved to %s. Saved rule_stats.csv.", len(saved_dirs), OUTPUT_DIR)
 
     if not saved_dirs:
@@ -140,7 +149,7 @@ def main() -> None:
         soft_stats.record(ds, results)
         del ds  # release before loading the next
 
-    soft_stats.save_csv("soft_stats.csv")
+    soft_stats.save_csv(str(RESULTS_DIR / "soft_stats.csv"))
     log.info("Saved soft_stats.csv")
 
 

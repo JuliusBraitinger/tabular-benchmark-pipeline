@@ -49,7 +49,7 @@ if NCBI_API_KEY:
 MIN_SAMPLES = 500  # GEO studies are typically smaller
 
 # where we cache GEOparse downloads so we don't re-download the same GSE
-CACHE_DIR = "/tmp/geoparse_cache"
+CACHE_DIR = os.path.join(os.environ.get("PIPELINE_CACHE", "/tmp"), "geoparse_cache")
 
 # regex patterns for spotting tumor vs normal labels in sample metadata.
 # we look for common keywords. this is rough but works for most GEO studies.
@@ -63,6 +63,61 @@ NORMAL_PATTERN = re.compile(
     r"|non.cancerous|non.malignant)\b",
     re.IGNORECASE,
 )
+
+# Keywords for scoring characteristics as classification targets
+PHENOTYPE_KEYWORDS = [
+    "disease", "condition", "phenotype", "status", "type", "subtype",
+    "stage", "grade", "class", "diagnosis", "outcome", "response",
+    "treatment", "pathology", "clinical", "category", "group",
+]
+METADATA_KEYWORDS = [
+    "age", "gender", "sex", "batch", "plate", "technician", "date",
+    "passage", "lot", "replicate", "time.point", "timepoint", "time",
+    "sample.id", "id", "name", "donor", "patient", "individual",
+]
+
+
+def _score_characteristic(char_name: str, values: list[str]) -> float:
+    """Score how good a characteristic is as a classification target.
+
+    Good targets have 2-50 unique values, balanced distribution, high coverage,
+    and phenotype-like names (not metadata like age/batch).
+    """
+    if not values or not char_name:
+        return 0.0
+
+    # Count unique non-empty values
+    unique_vals = [v for v in values if v and str(v).strip()]
+    n_unique = len(set(unique_vals))
+
+    # Outside the sweet spot for classification
+    if n_unique < 2 or n_unique > 50:
+        return 0.0
+
+    # Balance: penalize imbalanced classes (e.g., 95% class A, 5% class B)
+    if len(unique_vals) > 0:
+        counts = pd.Series(unique_vals).value_counts()
+        balance = counts.min() / counts.max() if len(counts) > 0 else 0
+    else:
+        balance = 0
+
+    # Coverage: what % of samples have this characteristic
+    coverage = len(unique_vals) / len(values) if len(values) > 0 else 0
+
+    # Base score combines unique values, balance, and coverage
+    base_score = n_unique * balance * coverage
+
+    # Boost phenotype-like characteristics
+    char_lower = char_name.lower()
+    if any(kw in char_lower for kw in PHENOTYPE_KEYWORDS):
+        base_score *= 2.0
+
+    # Penalize metadata-like characteristics
+    if any(kw in char_lower for kw in METADATA_KEYWORDS):
+        base_score *= 0.1
+
+    return base_score
+
 
 # GEO search queries (we loop over all of them and combine the results).
 # Each query filters for human microarray studies large enough to satisfy
@@ -158,13 +213,12 @@ def _parse_geoparse_metadata(accession):
         if gpl.table is not None and not gpl.table.empty:
             result["n_features"] = len(gpl.table)
 
-    # walk through every sample (GSM) and count tumor vs normal matches
+    # walk through every sample (GSM) and collect characteristics
     tumor_count = 0
     normal_count = 0
-    all_values = set()  # collect all unique characteristic values seen
+    all_characteristics = {}  # char_name -> [values from all samples]
 
     for gsm in gse.gsms.values():
-        # each sample has free-form "characteristics" and a "source_name"
         chars = gsm.metadata.get("characteristics_ch1", [])
         source = " ".join(gsm.metadata.get("source_name_ch1", []))
         combined = " ".join(chars) + " " + source
@@ -175,26 +229,39 @@ def _parse_geoparse_metadata(accession):
         if NORMAL_PATTERN.search(combined):
             normal_count += 1
 
-        # characteristics are formatted like "key: value"
-        # grab the value part so we can see how many unique labels exist
+        # Parse characteristics into key:value pairs
         for char in chars:
             if ":" in char:
-                val = char.split(":", 1)[1].strip().lower()
-                if val:
-                    all_values.add(val)
+                key, val = char.split(":", 1)
+                key = key.strip().lower()
+                val = val.strip()
+                if key not in all_characteristics:
+                    all_characteristics[key] = []
+                all_characteristics[key].append(val)
 
-    # POC scope: only tumor vs normal for now, but can be extended later
+    # Try tumor/normal first
     if tumor_count > 0 and normal_count > 0:
-        # both present -> 2-class classification
         result["task_type"] = "classification"
         result["n_classes"] = 2
         result["class_labels"] = "normal, tumor"
-    elif 2 <= len(all_values) <= 50:
-        # no clean tumor/normal signal but the characteristics have a reasonable
-        # number of unique values -> could still be classification
-        result["task_type"] = "classification"
-        result["n_classes"] = len(all_values)
-        result["class_labels"] = ", ".join(sorted(all_values)[:20])
+    else:
+        # Score all characteristics and pick the best one
+        best_char = None
+        best_score = 0.0
+        best_values = []
+        for char_name, values in all_characteristics.items():
+            score = _score_characteristic(char_name, values)
+            if score > best_score:
+                best_score = score
+                best_char = char_name
+                best_values = values
+
+        if best_char is not None and len(best_values) > 0:
+            unique_vals = set(v for v in best_values if v)
+            if 2 <= len(unique_vals) <= 50:
+                result["task_type"] = "classification"
+                result["n_classes"] = len(unique_vals)
+                result["class_labels"] = ", ".join(sorted(unique_vals)[:20])
 
     return result
 
@@ -405,6 +472,9 @@ def fetch(candidate):
     sample_ids: list[str] = []
     labels: dict[str, str] = {}
 
+    # First pass: collect all characteristics and expression data
+    all_characteristics = {}  # char_name -> [values from all samples]
+
     for gsm_id, gsm in gse.gsms.items():
         table = gsm.table
         if (table is not None and not table.empty
@@ -420,17 +490,46 @@ def fetch(candidate):
             sample_ids.append(gsm_id)
 
         chars = gsm.metadata.get("characteristics_ch1", [])
+        # Parse characteristics into key:value pairs
+        for char in chars:
+            if ":" in char:
+                key, val = char.split(":", 1)
+                key = key.strip().lower()
+                val = val.strip()
+                if key not in all_characteristics:
+                    all_characteristics[key] = []
+                all_characteristics[key].append(val)
+            else:
+                all_characteristics.setdefault("_unparsed", []).append(char)
+
+    # Second pass: score characteristics and pick the best one
+    best_char = None
+    best_score = 0.0
+    for char_name, values in all_characteristics.items():
+        score = _score_characteristic(char_name, values)
+        if score > best_score:
+            best_score = score
+            best_char = char_name
+
+    # Third pass: assign labels using tumor/normal regex OR best characteristic
+    for gsm_id, gsm in gse.gsms.items():
+        chars = gsm.metadata.get("characteristics_ch1", [])
         source = " ".join(gsm.metadata.get("source_name_ch1", []))
         combined = " ".join(chars) + " " + source
+
+        # Try tumor/normal first
         if TUMOR_PATTERN.search(combined):
             labels[gsm_id] = "tumor"
         elif NORMAL_PATTERN.search(combined):
             labels[gsm_id] = "normal"
-        else:
+        # Fall back to best-scored characteristic
+        elif best_char is not None:
             for char in chars:
                 if ":" in char:
-                    labels[gsm_id] = char.split(":", 1)[1].strip()
-                    break
+                    key, val = char.split(":", 1)
+                    if key.strip().lower() == best_char:
+                        labels[gsm_id] = val.strip()
+                        break
 
     if sample_arrays:
         X = pd.DataFrame(
@@ -447,6 +546,9 @@ def fetch(candidate):
         if X is None or X.empty:
             logger.warning("%s: no expression data found", accession)
             return None
+
+    # Filter out samples with missing/None labels
+    labels = {k: v for k, v in labels.items() if v}
 
     y = pd.Series(labels, name="target")
 
