@@ -11,6 +11,11 @@ from pipeline.soft_rules.s3_data_quality import top_variable_columns, MAX_FEATUR
 def per_feature_stat(X, y, task_type):
     # per-feature predictive stat in [0, 1]. 1.0 = uninformative (clean),
     # 0.0 = perfectly predictive of the target (suspicious for leakage).
+
+    # Skip if y has None values (can't be sorted)
+    if any(val is None for val in y):
+        return np.ones(X.shape[1])
+
     array = X.to_numpy(dtype=float, copy=False)
     col_means = np.nanmean(array, axis=0)
     array = np.where(np.isnan(array), col_means, array)
