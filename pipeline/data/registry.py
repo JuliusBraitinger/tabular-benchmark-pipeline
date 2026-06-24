@@ -27,6 +27,7 @@ _LOADER_MODULES: dict[str, str] = {
     "geo_rnaseq": "pipeline.data.geo_rnaseq_loader",
     "kaggle": "pipeline.data.kaggle_loader",
     "uci": "pipeline.data.uci_loader",
+    "local": "pipeline.data.local_loader",
 }
 
 
