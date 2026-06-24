@@ -50,3 +50,6 @@ sanity_check.py
 
 # Generated figures (plotly inlines ~4MB plotly.js per file)
 *.html
+
+#jupyter notebooks
+*.ipynb 
