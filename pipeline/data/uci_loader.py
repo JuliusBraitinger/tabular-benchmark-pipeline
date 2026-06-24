@@ -72,14 +72,12 @@ def fetch(candidate:CandidateInfo):
         y.to_frame().to_parquet(y_file)
         logger.info("UCI dataset id=%s downloaded and cached", id)
 
-    data_results = hard_rules.run_data_checks(X, y, candidate.task_type)
-    stats.record(candidate.id, "uci", candidate.name, data_results)
-    failed = hard_rules.failed_rules(data_results)
-    if failed:
-        logger.info("UCI dataset id=%s failed hard rules: %s", id, ", ".join(f"{r.rule}: {r.reason}" for r in failed))
+    result = hard_rules.run_hard_rules(X, y, candidate)
+    if result is None:
+        logger.info("UCI dataset id=%s discarded (data checks)", id)
         return None
-    task_type = hard_rules.inferred_task_type(data_results)
-    logger.info("UCI dataset id=%s inferred task type: %s", id, task_type)
+
+    _, task_type = result
 
     return Dataset(
         id=candidate.id,

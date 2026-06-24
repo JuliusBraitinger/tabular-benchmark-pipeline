@@ -560,15 +560,12 @@ def fetch(candidate):
     X = X.loc[shared]
     y = y.loc[shared]
 
-    data_results = hard_rules.run_data_checks(X, y, task_type=candidate.task_type)
-    failed = hard_rules.failed_rules(data_results)
-    if failed:
-        reasons = ", ".join(f"{r.rule}: {r.reason}" for r in failed)
-        logger.info("GEO %s discarded (data check): %s", accession, reasons)
+    result = hard_rules.run_hard_rules(X, y, candidate)
+    if result is None:
+        logger.info("GEO %s discarded (data checks)", accession)
         return None
 
-    task_type = hard_rules.inferred_task_type(data_results) or candidate.task_type
-    stats.record(accession, "geo_array", candidate.name, data_results)
+    _, task_type = result
 
     logger.info(
         "GEO %s: loaded %d samples x %d features, task=%s",

@@ -106,15 +106,12 @@ def fetch(candidate: CandidateInfo):
     X = df.drop(columns=[resolved])
 
     # Step 3: run hard rules
-    data_result = hard_rules.run_data_checks(X, y, task_type=candidate.task_type)
-    stats.record(id, "kaggle", candidate.name, data_result)
-    failed = hard_rules.failed_rules(data_result)
-    if failed:
-        logger.info("Kaggle %s failed hard rules: %s", id, failed)
+    result = hard_rules.run_hard_rules(X, y, candidate)
+    if result is None:
+        logger.info("Kaggle %s discarded (data checks)", id)
         return None
 
-    # A1 can refine task_type from the actual target (binary -> classification, etc.)
-    task_type = hard_rules.inferred_task_type(data_result) or candidate.task_type
+    _, task_type = result
 
     logger.info("Kaggle %s passed hard rules, loading dataset...", id)
 

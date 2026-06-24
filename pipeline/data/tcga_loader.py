@@ -411,17 +411,13 @@ def fetch(candidate):
     for col in CLINICAL_COLS:
         X[col] = [clinical.get(case_id_map.get(fid, ""), {}).get(col, None) for fid in X.index]
 
-    # Step 4: expensive data-level hard rules (A4 skipped: TCGA exempt from the N>=1000 size filter)
-    data_results = hard_rules.run_data_checks(X, y, task_type=candidate.task_type, skip=("A4",))
-    stats.record(project_id, "tcga", candidate.name, data_results)
-    failed = hard_rules.failed_rules(data_results)
-    if failed:
-        reasons = ", ".join(f"{r.rule}: {r.reason}" for r in failed)
-        logger.info("TCGA %s discarded (data check): %s", project_id, reasons)
+    # Step 4: expensive data-level hard rules (A4 skipped: TCGA exempt from size filter)
+    result = hard_rules.run_hard_rules(X, y, candidate, skip=("A4",))
+    if result is None:
+        logger.info("TCGA %s discarded (data checks)", project_id)
         return None
 
-    # if A1 inferred a task from the target, use it instead of 'unknown'
-    resolved_task = hard_rules.inferred_task_type(data_results) or candidate.task_type
+    _, resolved_task = result
 
     logger.info(
         "TCGA %s %s: loaded %d samples x %d features, task=%s",

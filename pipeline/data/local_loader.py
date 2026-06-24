@@ -1,5 +1,6 @@
 # Local loader: load datasets that are stored in data/datasets/{id}/
 # for various data sources. Each dataset is expected to have X.parquet, y.parquet, and optionally meta.pkl.
+import logging
 import pandas as pd
 from pathlib import Path
 import pickle
@@ -7,6 +8,8 @@ import pickle
 from pipeline.data.base import CandidateInfo, Dataset
 from pipeline.hard_rules import runner as hard_rules
 from pipeline import stats
+
+logger = logging.getLogger(__name__)
 
 
 DATASETS_DIR = Path("data/datasets")
@@ -91,20 +94,17 @@ def fetch(candidate):
     if isinstance(y, pd.DataFrame):
         y = y.iloc[:, 0]
 
-    data_results = hard_rules.run_data_checks(
-        X, y,
-        task_type=candidate.task_type
-    )
-
-    stats.record(candidate.id, "local", candidate.name, data_results)
-
-    if not hard_rules.all_passed(data_results):
+    result = hard_rules.run_hard_rules(X, y, candidate)
+    if result is None:
+        logger.info("Local %s discarded (data checks)", candidate.id)
         return None
+
+    _, task_type = result
 
     return Dataset(
         X=X,
         y=y,
-        task_type=candidate.task_type,
+        task_type=task_type,
         id=candidate.id,
         source="local",
         name=candidate.name,
