@@ -1,6 +1,5 @@
 # Local loader: load datasets that are stored in data/datasets/{id}/
-# Users can add custom datasets without using the API loaders
-
+# for various data sources. Each dataset is expected to have X.parquet, y.parquet, and optionally meta.pkl.
 import pandas as pd
 from pathlib import Path
 import pickle
@@ -88,7 +87,9 @@ def fetch(candidate):
     dataset_dir = DATASETS_DIR / candidate.id
 
     X = pd.read_parquet(dataset_dir / "X.parquet")
-    y = pd.read_parquet(dataset_dir / "y.parquet").iloc[:, 0]
+    y = pd.read_parquet(dataset_dir / "y.parquet")
+    if isinstance(y, pd.DataFrame):
+        y = y.iloc[:, 0]
 
     data_results = hard_rules.run_data_checks(
         X, y,
@@ -109,3 +110,4 @@ def fetch(candidate):
         name=candidate.name,
         metadata=candidate.metadata,
     )
+
