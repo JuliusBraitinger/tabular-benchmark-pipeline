@@ -1,5 +1,3 @@
-#TODO parallelize fetch_all. For each loader one thread -> no need to wait for the slowest source to finish (GEO)
-
 """Dataset registry.
 
 Central dispatcher for all data sources (OpenML, TCGA, GEO). Instead of
@@ -73,36 +71,10 @@ def fetch(candidate: base.CandidateInfo) -> base.Dataset | None:
     """Downloads the actual data for ONE candidate.
     Looks at candidate.source ('openml', 'tcga', 'geo_array') and dispatches
     to the right loader's fetch function.
-    basically dispatcher for each source to download which can be extended easily 
+    basically dispatcher for each source to download which can be extended easily
     """
     if candidate.source not in _LOADER_MODULES:
         logger.warning("Unknown source: %s", candidate.source)
         return None
     # dispatch: forward the candidate to the right loader (loader imported lazily here)
     return _loader(candidate.source).fetch(candidate)
-
-
-def fetch_all(
-    candidates: list[base.CandidateInfo],
-    max_datasets: int | None = None,
-) -> list[base.Dataset]:
-    """Downloads data for a WHOLE list of candidates (calls fetch() in a loop).
-    Returns only the datasets that passed all hard rules; the rest are dropped.
-    max_datasets stops the loop early once enough datasets are collected.
-    """
-    datasets: list[base.Dataset] = []
-    for candidate in candidates:
-        # stop early if we've collected enough
-        if max_datasets and len(datasets) >= max_datasets:
-            break
-        # one bad candidate shouldn't kill the rest of the run
-        try:
-            dataset = fetch(candidate)
-        except Exception:
-            logger.exception("fetch failed for %s, skipping", candidate.id)
-            continue
-        # fetch() returns None if hard rules failed, skip those
-        if dataset is not None:
-            datasets.append(dataset)
-    logger.info("Loaded %d datasets out of %d candidates", len(datasets), len(candidates))
-    return datasets
