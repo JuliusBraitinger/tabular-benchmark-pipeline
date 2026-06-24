@@ -72,9 +72,9 @@ def fetch(candidate:CandidateInfo):
         y.to_frame().to_parquet(y_file)
         logger.info("UCI dataset id=%s downloaded and cached", id)
 
-    result = hard_rules.run_hard_rules(X, y, candidate)
+    result, data_results = hard_rules.run_hard_rules(X, y, candidate)
+    stats.record(candidate.id, candidate.source, candidate.name, data_results)
     if result is None:
-        logger.info("UCI dataset id=%s discarded (data checks)", id)
         return None
 
     _, task_type = result

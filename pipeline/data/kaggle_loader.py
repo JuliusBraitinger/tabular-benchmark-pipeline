@@ -106,9 +106,9 @@ def fetch(candidate: CandidateInfo):
     X = df.drop(columns=[resolved])
 
     # Step 3: run hard rules
-    result = hard_rules.run_hard_rules(X, y, candidate)
+    result, data_results = hard_rules.run_hard_rules(X, y, candidate)
+    stats.record(candidate.id, candidate.source, candidate.name, data_results)
     if result is None:
-        logger.info("Kaggle %s discarded (data checks)", id)
         return None
 
     _, task_type = result

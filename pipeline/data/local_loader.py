@@ -94,9 +94,9 @@ def fetch(candidate):
     if isinstance(y, pd.DataFrame):
         y = y.iloc[:, 0]
 
-    result = hard_rules.run_hard_rules(X, y, candidate)
+    result, data_results = hard_rules.run_hard_rules(X, y, candidate)
+    stats.record(candidate.id, candidate.source, candidate.name, data_results)
     if result is None:
-        logger.info("Local %s discarded (data checks)", candidate.id)
         return None
 
     _, task_type = result

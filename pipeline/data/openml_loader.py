@@ -19,6 +19,7 @@ import pandas as pd
 from pipeline.config import ACCEPTED_TASKS, MIN_FEATURES, MIN_ROWS  # imports thresholds from config.py
 from pipeline.data.base import CandidateInfo, Dataset, infer_domain
 from pipeline.hard_rules import runner as hard_rules  # hard rule checks
+from pipeline import stats
 
 logger = logging.getLogger(__name__)
 
@@ -121,9 +122,9 @@ def fetch(candidate: CandidateInfo) -> Dataset | None: #aktuell werden hier auch
         logger.warning("OpenML %d: no data returned", did)
         return None
 
-    result = hard_rules.run_hard_rules(X, y, candidate)
+    result, data_results = hard_rules.run_hard_rules(X, y, candidate)
+    stats.record(candidate.id, candidate.source, candidate.name, data_results)
     if result is None:
-        logger.info("OpenML %d discarded (data checks)", did)
         return None
 
     _, task_type = result

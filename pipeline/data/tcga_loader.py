@@ -412,9 +412,9 @@ def fetch(candidate):
         X[col] = [clinical.get(case_id_map.get(fid, ""), {}).get(col, None) for fid in X.index]
 
     # Step 4: expensive data-level hard rules (A4 skipped: TCGA exempt from size filter)
-    result = hard_rules.run_hard_rules(X, y, candidate, skip=("A4",))
+    result, data_results = hard_rules.run_hard_rules(X, y, candidate, skip=("A4",))
+    stats.record(candidate.id, candidate.source, candidate.name, data_results)
     if result is None:
-        logger.info("TCGA %s discarded (data checks)", project_id)
         return None
 
     _, resolved_task = result

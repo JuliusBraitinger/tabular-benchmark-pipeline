@@ -560,9 +560,9 @@ def fetch(candidate):
     X = X.loc[shared]
     y = y.loc[shared]
 
-    result = hard_rules.run_hard_rules(X, y, candidate)
+    result, data_results = hard_rules.run_hard_rules(X, y, candidate)
+    stats.record(candidate.id, candidate.source, candidate.name, data_results)
     if result is None:
-        logger.info("GEO %s discarded (data checks)", accession)
         return None
 
     _, task_type = result

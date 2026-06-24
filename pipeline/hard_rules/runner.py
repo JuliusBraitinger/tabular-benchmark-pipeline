@@ -7,7 +7,6 @@ import pandas as pd
 
 from pipeline.hard_rules import a1_task_type, a2_synthetic, a3_signal, a4_dimensions, a5_licence
 from pipeline.hard_rules.base import RuleResult
-from pipeline import stats
 
 # Metadata-level rules (cheap, run first)
 _METADATA_CHECKS = [
@@ -103,12 +102,11 @@ def inferred_task_type(results: list[RuleResult]) -> str | None:
 
 
 def run_hard_rules(X: pd.DataFrame, y: pd.Series, candidate, skip: tuple[str, ...] = ()):
-    #method for running hard rules on dataset and record it 
+    #method for running hard rules on dataset
     data_results = run_data_checks(X, y, task_type=candidate.task_type, skip=skip)
-    stats.record(candidate.id, candidate.source, candidate.name, data_results)
 
     if not all_passed(data_results):
-        return None
+        return None, data_results
 
     task_type = inferred_task_type(data_results) or candidate.task_type
-    return (True, task_type)
+    return (True, task_type), data_results
