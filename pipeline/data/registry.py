@@ -18,6 +18,7 @@ from pipeline.data import (  # one loader per source
     geo_array_loader,
     geo_rnaseq_loader,
     kaggle_loader,
+    local_loader,
     openml_loader,
     tcga_loader,
     uci_loader,
@@ -51,6 +52,10 @@ _LOADERS: dict[str, dict[str, Callable]] = {
     "uci": {
         "list": uci_loader.list_candidates,
         "fetch": uci_loader.fetch,
+    },
+    "local": {
+        "list": local_loader.list_candidates,
+        "fetch": local_loader.fetch,
     },
 }
 

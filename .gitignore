@@ -20,11 +20,13 @@ env/
 .vscode/
 .idea/
 
-#data
-data/
+#data (root level only)
+/data/
+!pipeline/data/local_loader.py
 !kaggle_loader.py
 !uci_loader.py
 !geo_rnaseq_loader.py
+!local_loader.py
 #scripts
 scripts/
 
@@ -50,3 +52,4 @@ sanity_check.py
 
 # Generated figures (plotly inlines ~4MB plotly.js per file)
 *.html
+*.ipynb
