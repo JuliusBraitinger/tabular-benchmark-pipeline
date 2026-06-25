@@ -53,7 +53,7 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
         fmt = str(row.get("format", "")).lower()
 
         # Record pre-filter rejections
-        if n_features <= MIN_FEATURES or n_samples <= MIN_ROWS:
+        if n_features < MIN_FEATURES or n_samples < MIN_ROWS:
             stats.record(str(did), "openml", name, [
                 RuleResult(rule="a4", passed=False, reason=f"N={n_samples} < {MIN_ROWS} or P={n_features} < {MIN_FEATURES}")
             ])
