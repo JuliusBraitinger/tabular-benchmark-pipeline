@@ -19,6 +19,7 @@ import pandas as pd
 from pipeline.config import ACCEPTED_TASKS, MIN_FEATURES, MIN_ROWS  # imports thresholds from config.py
 from pipeline.data.base import CandidateInfo, Dataset, infer_domain
 from pipeline.hard_rules import runner as hard_rules  # hard rule checks
+from pipeline.hard_rules.base import RuleResult
 from pipeline import stats
 
 logger = logging.getLogger(__name__)
@@ -38,30 +39,36 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
 
     # Step 1: get ALL datasets from OpenML as a dataframe
     all_ds = openml.datasets.list_datasets(output_format="dataframe")
-
-    # Step 2: quick size filter - only keep datasets with enough rows and features
-    filtered = all_ds[
-        (all_ds["NumberOfFeatures"] >= MIN_FEATURES)
-        & (all_ds["NumberOfInstances"] >= MIN_ROWS)
-        & (all_ds["format"].str.lower() != "sparse_arff")  # sparse ARFF can't be parsed (openml+pandas2 bug)
-    ].copy()
-
-    logger.info("OpenML: %d total, %d after size filter", len(all_ds), len(filtered))
+    logger.info("OpenML: %d total", len(all_ds))
 
     candidates: list[CandidateInfo] = []
 
-    # Step 3: loop through filtered datasets and check hard rules
-    for _, row in filtered.head(max_candidates).iterrows():
-        did = int(row["did"])  # dataset ID on OpenML
+    # Step 2: loop through ALL datasets and record pre-filter rejections
+    for _, row in all_ds.head(max_candidates * 3).iterrows():  # check more to account for rejections
+        did = int(row["did"])
         name = str(row.get("name", ""))
         n_samples = int(row.get("NumberOfInstances", 0))
         n_features = int(row.get("NumberOfFeatures", 0))
         licence = str(row.get("licence", "") or "")
+        fmt = str(row.get("format", "")).lower()
+
+        # Record pre-filter rejections
+        if n_features <= MIN_FEATURES or n_samples <= MIN_ROWS:
+            stats.record(str(did), "openml", name, [
+                RuleResult(rule="a4", passed=False, reason=f"N={n_samples} < {MIN_ROWS} or P={n_features} < {MIN_FEATURES}")
+            ])
+            continue
+
+        if fmt == "sparse_arff":
+            stats.record(str(did), "openml", name, [
+                RuleResult(rule="a4", passed=False, reason="sparse_arff format (unloadable)")
+            ])
+            continue
 
         # ask OpenML what kind of task this dataset is for (classification/regression)
         task_type = _fetch_task_type(did)
 
-        # Step 4: run metadata-level hard rules (A1 task type, A2 synthetic, A4 dimensions, A5 licence)
+        # Step 3: run metadata-level hard rules (A1 task type, A2 synthetic, A4 dimensions, A5 licence)
         results = hard_rules.run_metadata_checks(
             n_samples=n_samples,
             n_features=n_features,
@@ -72,15 +79,17 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
             metadata={"tags": []},
         )
 
-
-        # if any hard rule failed, skip this dataset
+        # if any hard rule failed, record it
         failed = hard_rules.failed_rules(results)
         if failed:
-            reasons = ", ".join(f"{r.rule}: {r.reason}" for r in failed)
-            logger.debug("OpenML %d (%s) discarded: %s", did, name, reasons)
+            stats.record(str(did), "openml", name, results)
+            logger.debug("OpenML %d (%s) rejected", did, name)
             continue
 
-        # Step 5: passed all metadata checks, save as a candidate
+        # Step 4: passed all metadata checks, save as a candidate
+        if len(candidates) >= max_candidates:
+            break
+
         candidates.append(CandidateInfo(
             id=str(did),
             source="openml",
