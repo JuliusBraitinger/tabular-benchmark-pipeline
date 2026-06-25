@@ -24,6 +24,31 @@ from pipeline import stats
 
 logger = logging.getLogger(__name__)
 
+OPENML_DOMAIN_MAPPING = {
+    "computer_vision": {"image", "vision", "computer vision", "image data"},
+    "nlp": {"nlp", "text", "language", "sentiment"},
+    "time_series": {"time series", "timeseries", "temporal"},
+    "biological": {"biology", "biological", "genomics", "botany", "ecology"},
+    "bioedical": {"medical", "healthcare", "clinical"},
+    "chemical": {"chemical", "chemistry"},
+    "geoscience": {"geoscience", "geography"},
+}
+
+
+def get_openml_domain(did):
+    try:
+        ds = openml.datasets.get_dataset(did)
+        tags = {t.lower() for t in (ds.tag or [])}
+
+        for domain, keywords in OPENML_DOMAIN_MAPPING.items():
+            if tags & keywords:  # set intersection - any match
+                return domain
+    except Exception:
+        pass
+
+    return "general"
+
+
 # put openml's own download cache on scratch too when PIPELINE_DATA is set (cluster);
 # otherwise leave openml's default (~/.openml). Native OPENML_CACHE_DIR still wins if set.
 _data_root = os.environ.get("PIPELINE_DATA")
@@ -51,18 +76,19 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
         n_features = int(row.get("NumberOfFeatures", 0))
         licence = str(row.get("licence", "") or "")
         fmt = str(row.get("format", "")).lower()
+        domain = get_openml_domain(did)
 
         # Record pre-filter rejections
         if n_features < MIN_FEATURES or n_samples < MIN_ROWS:
             stats.record(str(did), "openml", name, [
                 RuleResult(rule="a4", passed=False, reason=f"N={n_samples} < {MIN_ROWS} or P={n_features} < {MIN_FEATURES}")
-            ])
+            ], domain)
             continue
 
         if fmt == "sparse_arff":
             stats.record(str(did), "openml", name, [
                 RuleResult(rule="a4", passed=False, reason="sparse_arff format (unloadable)")
-            ])
+            ], domain)
             continue
 
         # ask OpenML what kind of task this dataset is for (classification/regression)
@@ -82,7 +108,7 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
         # if any hard rule failed, record it
         failed = hard_rules.failed_rules(results)
         if failed:
-            stats.record(str(did), "openml", name, results, "general")
+            stats.record(str(did), "openml", name, results, domain)
             logger.debug("OpenML %d (%s) rejected", did, name)
             continue
 
@@ -100,7 +126,7 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
             licence=licence,
             url=f"https://www.openml.org/d/{did}",
             metadata={},
-            domain=infer_domain(name),
+            domain=domain,
         ))
 
     logger.info("OpenML: %d candidates after metadata filters", len(candidates))
