@@ -72,7 +72,6 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
             metadata={"tags": []},
         )
 
-        stats.record(str(did), "openml", name, results)
 
         # if any hard rule failed, skip this dataset
         failed = hard_rules.failed_rules(results)

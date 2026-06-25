@@ -138,7 +138,6 @@ def list_candidates(max_candidates: int = 100):
             name=name,
             metadata={},
         )
-        stats.record(str(uci_id), "uci", name, results)
 
         if hard_rules.failed_rules(results):
             continue

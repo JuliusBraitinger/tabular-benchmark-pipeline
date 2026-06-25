@@ -339,7 +339,6 @@ def list_candidates(max_candidates=50):
                 if meta["task_type"] == "unknown":
                     logger.debug("  %s: no tumor/normal contrast, skipping", accession)
                     fail = RuleResult(rule="pre-filter", passed=False, reason="no tumor/normal contrast")
-                    stats.record(accession, "geo_array", title, [fail])
                     continue
 
                 # feature count check (if we have it)
@@ -348,14 +347,12 @@ def list_candidates(max_candidates=50):
                     logger.debug("  %s: P=%d < %d, skipping", accession, n_features, MIN_FEATURES)
                     reason = "P=" + str(n_features) + " < " + str(MIN_FEATURES)
                     fail = RuleResult(rule="pre-filter", passed=False, reason=reason)
-                    stats.record(accession, "geo_array", title, [fail])
                     continue
                 if n_features is not None and n_features > MAX_FEATURES:
                     logger.debug("  %s: P=%d > %d, skipping (won't fit in RAM)",
                                  accession, n_features, MAX_FEATURES)
                     reason = "P=" + str(n_features) + " > " + str(MAX_FEATURES) + " (RAM cap)"
                     fail = RuleResult(rule="pre-filter", passed=False, reason=reason)
-                    stats.record(accession, "geo_array", title, [fail])
                     continue
 
                 # run the central metadata hard rules
@@ -367,7 +364,6 @@ def list_candidates(max_candidates=50):
                     source="geo_array",
                     name=title,
                 )
-                stats.record(accession, "geo_array", title, results)
                 if not hard_rules.all_passed(results):
                     continue
 

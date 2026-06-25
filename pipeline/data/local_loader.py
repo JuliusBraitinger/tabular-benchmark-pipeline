@@ -62,7 +62,6 @@ def list_candidates(max_candidates=50):
             name=name,
         )
 
-        stats.record(dataset_id, "local", name, results)
 
         if not hard_rules.all_passed(results):
             continue

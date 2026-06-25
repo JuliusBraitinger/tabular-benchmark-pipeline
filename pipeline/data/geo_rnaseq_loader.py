@@ -69,7 +69,6 @@ def list_candidates(max_candidates=50):
             name=acc,
             skip=("A4",),
         )
-        stats.record(acc, "geo_rnaseq", acc, results)
         if not hard_rules.all_passed(results):
             continue
 

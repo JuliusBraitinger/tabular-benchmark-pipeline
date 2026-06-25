@@ -301,7 +301,6 @@ def list_candidates(max_candidates=100):
                 name=f"{project_id} {cancer_type}",
                 skip=("A4",),  # TCGA is sample-poor/feature-rich; exempt from the N>=1000 size filter
             )
-            stats.record(project_id, "tcga", cancer_type + " - " + dt, results)
 
             if not hard_rules.all_passed(results):
                 continue
