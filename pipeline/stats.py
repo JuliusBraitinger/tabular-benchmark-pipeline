@@ -11,11 +11,12 @@ RULE_NAME = {"A1": "task type", "A2": "synthetic", "A3": "signal",
 
 
 
-def record(dataset_id, source, name, rule_results):
+def record(dataset_id, source, name, rule_results, domain=None):
     row = {
         "dataset_id": dataset_id,
         "source": source,
         "name": name,
+        "domain": domain,
     }
     # fill in pass/fail for each rule we got a result for
     for r in rule_results:

@@ -82,7 +82,7 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
         # if any hard rule failed, record it
         failed = hard_rules.failed_rules(results)
         if failed:
-            stats.record(str(did), "openml", name, results)
+            stats.record(str(did), "openml", name, results, "general")
             logger.debug("OpenML %d (%s) rejected", did, name)
             continue
 
