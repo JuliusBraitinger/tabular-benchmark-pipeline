@@ -208,30 +208,34 @@ def list_candidates(max_candidates: int = 100):
 
             logger.info("  checking %s ...", id)
 
-            # Fetch Croissant export to get column names
             field_names = fetch_croissant_fields(id, auth=(username, key))
             if not field_names:
                 logger.info("    rejected: no croissant schema")
-                fail = RuleResult(rule="pre-filter", passed=False, reason="no croissant schema")
+                stats.record(id, "kaggle", title, [
+                    RuleResult(rule="a4", passed=False, reason="no croissant schema")
+                ])
                 continue
 
             n_features = len(field_names)
             if n_features < MIN_FEATURES:
                 logger.info("    rejected: P=%d < %d", n_features, MIN_FEATURES)
-                fail = RuleResult(rule="pre-filter", passed=False,
-                                  reason=f"P={n_features} < {MIN_FEATURES}")
+                stats.record(id, "kaggle", title, [
+                    RuleResult(rule="a4", passed=False, reason=f"P={n_features} < {MIN_FEATURES}")
+                ])
                 continue
             if n_features > MAX_FEATURES:
                 logger.info("    rejected: P=%d > %d (RAM cap)", n_features, MAX_FEATURES)
-                fail = RuleResult(rule="pre-filter", passed=False,
-                                  reason=f"P={n_features} > {MAX_FEATURES} (RAM cap)")
+                stats.record(id, "kaggle", title, [
+                    RuleResult(rule="a4", passed=False, reason=f"P={n_features} > {MAX_FEATURES} (RAM cap)")
+                ])
                 continue
 
             is_tabular, reason = looks_tabular(field_names, title)
             if not is_tabular:
                 logger.info("    rejected: not tabular - %s", reason)
-                fail = RuleResult(rule="pre-filter", passed=False,
-                                  reason=f"non-tabular: {reason}")
+                stats.record(id, "kaggle", title, [
+                    RuleResult(rule="a2", passed=False, reason=f"non-tabular: {reason}")
+                ])
                 continue
 
             meta_results = hard_rules.run_metadata_checks(
@@ -243,9 +247,8 @@ def list_candidates(max_candidates: int = 100):
                 name=title,
             )
             if not hard_rules.all_passed(meta_results):
-                reasons = ", ".join(f"{r.rule}: {r.reason}"
-                                    for r in hard_rules.failed_rules(meta_results))
-                logger.info("    rejected by hard rules: %s", reasons)
+                logger.info("    rejected by hard rules")
+                stats.record(id, "kaggle", title, meta_results)
                 continue
 
             logger.info("    ACCEPTED %s (P=%d, licence=%s)", id, n_features, license)

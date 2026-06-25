@@ -7,6 +7,7 @@ import pickle
 
 from pipeline.data.base import CandidateInfo, Dataset
 from pipeline.hard_rules import runner as hard_rules
+from pipeline.hard_rules.base import RuleResult
 from pipeline import stats
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,9 @@ def list_candidates(max_candidates=50):
         y_path = dataset_dir / "y.parquet"
 
         if not X_path.exists() or not y_path.exists():
+            stats.record(dataset_id, "local", dataset_id, [
+                RuleResult(rule="pre-filter", passed=False, reason="missing X.parquet or y.parquet")
+            ])
             continue
 
         X = pd.read_parquet(X_path)
@@ -36,13 +40,11 @@ def list_candidates(max_candidates=50):
         n_samples = len(X)
         n_features = len(X.columns)
 
-        # Infer task type from y
         if y.dtype in ['float64', 'float32']:
             task_type = "regression"
         else:
             task_type = "classification"
 
-        # Load metadata if exists
         meta_path = dataset_dir / "meta.pkl"
         if meta_path.exists():
             with open(meta_path, "rb") as f:
@@ -62,8 +64,8 @@ def list_candidates(max_candidates=50):
             name=name,
         )
 
-
         if not hard_rules.all_passed(results):
+            stats.record(dataset_id, "local", name, results)
             continue
 
         candidates.append(CandidateInfo(

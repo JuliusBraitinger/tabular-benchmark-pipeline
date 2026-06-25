@@ -113,22 +113,27 @@ def list_candidates(max_candidates: int = 100):
         time.sleep(REQUEST_DELAY)
         if meta is None:
             continue
-        
-        if not meta.get("data_url"): #if no data url, can't fetch the dataset, so skip
+
+        name = meta.get("name", "")
+
+        if not meta.get("data_url"):
+            stats.record(str(uci_id), "uci", name, [
+                RuleResult(rule="a4", passed=False, reason="no data URL")
+            ])
             continue
 
-        # step 2: pull the fields
-        n = meta.get("num_instances") or 0 #if unknown or missing set to 0 so condition holds 
+        n = meta.get("num_instances") or 0
         p = meta.get("num_features") or 0
-        name = meta.get("name", "")
         tasks = meta.get("tasks") or []
         task_type = tasks[0].lower() if tasks else "unknown"
         licence = meta.get("license") or "CC By 4.0"
 
         if n < MIN_ROWS or p < MIN_FEATURES or p > MAX_FEATURES:
+            stats.record(str(uci_id), "uci", name, [
+                RuleResult(rule="a4", passed=False, reason=f"N={n} < {MIN_ROWS} or P={p} < {MIN_FEATURES} or P={p} > {MAX_FEATURES}")
+            ])
             continue
 
-        # step 4: metadata hard rules (A1, A2, A4, A5)
         results = hard_rules.run_metadata_checks(
             n_samples=n,
             n_features=p,
@@ -140,9 +145,9 @@ def list_candidates(max_candidates: int = 100):
         )
 
         if hard_rules.failed_rules(results):
+            stats.record(str(uci_id), "uci", name, results)
             continue
 
-        # step 5: passed,
         candidates.append(CandidateInfo(
             id=str(uci_id),
             source="uci",
