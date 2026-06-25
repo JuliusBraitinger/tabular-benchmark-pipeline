@@ -55,14 +55,14 @@ def fetch(candidate:CandidateInfo):
             results = fetch_ucirepo(id=int(id))
         except Exception as e:
             logger.info("UCI dataset fetch failed for id=%s: %s", id, e)
-            return None
+            return None, []
         
         X = results.data.features
         y = results.data.targets
 
         if X is None or y is None:
             logger.info("UCI dataset id=%s has no data, skipping", id)
-            return None
+            return None, []
         
         if isinstance(y, pd.DataFrame) and y.shape[1] == 1:
             y = y.iloc[:, 0]
@@ -73,9 +73,8 @@ def fetch(candidate:CandidateInfo):
         logger.info("UCI dataset id=%s downloaded and cached", id)
 
     result, data_results = hard_rules.run_hard_rules(X, y, candidate)
-    stats.record(candidate.id, candidate.source, candidate.name, data_results)
     if result is None:
-        return None
+        return None, []
 
     _, task_type = result
 
@@ -92,7 +91,7 @@ def fetch(candidate:CandidateInfo):
             "url" : candidate.url,
         },
         domain=candidate.domain,
-    )
+    ), data_results
 
 
 def list_candidates(max_candidates: int = 100):

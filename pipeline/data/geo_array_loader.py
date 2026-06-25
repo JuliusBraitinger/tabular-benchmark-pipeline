@@ -458,11 +458,11 @@ def fetch(candidate):
         gse = GEOparse.get_GEO(accession, destdir=CACHE_DIR, silent=True)
     except Exception as e:
         logger.warning("Failed to download %s: %s", accession, e)
-        return None
+        return None, []
 
     if not gse.gpls:
         logger.warning("%s: no platform found", accession)
-        return None
+        return None, []
 
     # Always try to derive labels from SOFT metadata (it's there even when values are stripped)
     # Build X as float32 row-by-row to keep peak memory ~half of what
@@ -542,10 +542,10 @@ def fetch(candidate):
             X = _expression_from_series_matrix(accession)
         except Exception as e:
             logger.warning("%s: Series Matrix fallback failed: %s", accession, e)
-            return None
+            return None, []
         if X is None or X.empty:
             logger.warning("%s: no expression data found", accession)
-            return None
+            return None, []
 
     # Filter out samples with missing/None labels
     labels = {k: v for k, v in labels.items() if v}
@@ -555,15 +555,14 @@ def fetch(candidate):
     shared = X.index.intersection(y.index)
     if len(shared) < 10:
         logger.warning("%s: only %d labeled samples", accession, len(shared))
-        return None
+        return None, []
 
     X = X.loc[shared]
     y = y.loc[shared]
 
     result, data_results = hard_rules.run_hard_rules(X, y, candidate)
-    stats.record(candidate.id, candidate.source, candidate.name, data_results)
     if result is None:
-        return None
+        return None, []
 
     _, task_type = result
 
@@ -585,4 +584,4 @@ def fetch(candidate):
             "url": candidate.url,
         },
         domain="biological",
-    )
+    ), data_results

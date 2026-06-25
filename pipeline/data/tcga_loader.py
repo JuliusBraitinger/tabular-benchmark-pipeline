@@ -166,9 +166,9 @@ def _get_one_file_id(project_id, data_type, workflow_type):
         hits = data["data"]["hits"]
         if hits:
             return hits[0]["file_id"]
-        return None
+        return None, []
     except Exception:
-        return None
+        return None, []
 
 
 def _count_features(file_id, data_type):
@@ -198,10 +198,10 @@ def _count_features(file_id, data_type):
 
         if count > 0:
             return count
-        return None
+        return None, []
     except Exception as e:
         logger.warning("Feature count failed for %s: %s", file_id, e)
-        return None
+        return None, []
 
 
 def _infer_task(sample_types):
@@ -373,7 +373,7 @@ def fetch(candidate):
         file_ids = _get_file_ids(project_id, data_type, workflow_type)
         if not file_ids:
             logger.warning("No files found for %s %s", project_id, data_type)
-            return None
+            return None, []
 
         # build the feature matrix + get sample_type for each file
         result = _build_feature_matrix(file_ids, data_type)
@@ -382,7 +382,7 @@ def fetch(candidate):
 
         if X is None or X.empty:
             logger.warning("Failed to build matrix for %s %s", project_id, data_type)
-            return None
+            return None, []
 
         # use the sample_type from the actual expression file as the label
         # before this was using clinical data which didnt match the files
@@ -413,9 +413,8 @@ def fetch(candidate):
 
     # Step 4: expensive data-level hard rules (A4 skipped: TCGA exempt from size filter)
     result, data_results = hard_rules.run_hard_rules(X, y, candidate, skip=("A4",))
-    stats.record(candidate.id, candidate.source, candidate.name, data_results)
     if result is None:
-        return None
+        return None, []
 
     _, resolved_task = result
 
@@ -437,7 +436,7 @@ def fetch(candidate):
             "url": candidate.url,
         },
         domain="biomedical",
-    )
+    ), data_results
 
 
 # -- download + parsing stuff used inside fetch() --
@@ -551,7 +550,7 @@ def _download_single_file(file_id, data_type):
     parser = _PARSERS.get(data_type)
     if parser is None:
         logger.debug("No parser for data_type %s", data_type)
-        return None
+        return None, []
     try:
         resp = requests.get(f"{GDC_BASE_URL}/data/{file_id}", timeout=60)
         resp.raise_for_status()
@@ -559,10 +558,10 @@ def _download_single_file(file_id, data_type):
         data = parser(lines)
         if data:
             return pd.Series(data)
-        return None
+        return None, []
     except Exception as e:
         logger.debug("Failed to download file %s: %s", file_id, e)
-        return None
+        return None, []
 
 
 def _build_feature_matrix(file_records, data_type, max_files=3000):

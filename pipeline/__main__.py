@@ -86,16 +86,19 @@ def main() -> None:
     for i, candidate in enumerate(candidates, 1):
         log.info("[%d/%d] fetching %s", i, len(candidates), candidate.id)
         try:
-            ds = registry.fetch(candidate)
+            ds, data_results = registry.fetch(candidate)
         except Exception:
             log.exception("fetch failed for %s, skipping", candidate.id)
             continue
         if ds is None:
+            # Record hard rule failures
+            stats.record(candidate.id, candidate.source, candidate.name, data_results)
             continue
 
         # A6: reject if this dataset duplicates one already accepted.
         a6_result = a6_cross_duplicate.check(ds, a6_pool)
-        stats.record(candidate.id, candidate.source, candidate.name, [a6_result])
+        # Record all hard rules (A1-A6) once per dataset
+        stats.record(candidate.id, candidate.source, candidate.name, data_results + [a6_result])
         if not a6_result.passed:
             log.info("  A6 rejected %s: %s", ds.id, a6_result.reason)
             del ds

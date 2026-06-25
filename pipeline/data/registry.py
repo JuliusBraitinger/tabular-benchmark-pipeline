@@ -67,14 +67,9 @@ def list_candidates(
     return all_candidates
 
 
-def fetch(candidate: base.CandidateInfo) -> base.Dataset | None:
-    """Downloads the actual data for ONE candidate.
-    Looks at candidate.source ('openml', 'tcga', 'geo_array') and dispatches
-    to the right loader's fetch function.
-    basically dispatcher for each source to download which can be extended easily
-    """
+def fetch(candidate: base.CandidateInfo):
     if candidate.source not in _LOADER_MODULES:
         logger.warning("Unknown source: %s", candidate.source)
-        return None
+        return None, []
     # dispatch: forward the candidate to the right loader (loader imported lazily here)
     return _loader(candidate.source).fetch(candidate)

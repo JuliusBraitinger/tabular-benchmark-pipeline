@@ -95,9 +95,8 @@ def fetch(candidate):
         y = y.iloc[:, 0]
 
     result, data_results = hard_rules.run_hard_rules(X, y, candidate)
-    stats.record(candidate.id, candidate.source, candidate.name, data_results)
     if result is None:
-        return None
+        return None, []
 
     _, task_type = result
 
@@ -109,5 +108,5 @@ def fetch(candidate):
         source="local",
         name=candidate.name,
         metadata=candidate.metadata,
-    )
+    ), data_results
 

@@ -108,7 +108,7 @@ def fetch(candidate):
     y = meta[target].dropna()
     shared = X.index.intersection(y.index)
     if len(shared) < 2:
-        return None
+        return None, []
     X = X.loc[shared].copy()
     y = y.loc[shared]
     y.name = "target"
@@ -122,9 +122,8 @@ def fetch(candidate):
         task_type=candidate.task_type,
         skip=("A4",),  # RNA-seq is sample-poor; size filter excluded for this source
     )
-    stats.record(accessionId, "geo_rnaseq", accessionId, results)
     if not hard_rules.all_passed(results):
-        return None
+        return None, []
 
     return Dataset(
         id=f"GEO-{accessionId}",
@@ -135,6 +134,6 @@ def fetch(candidate):
         task_type=candidate.task_type,
         metadata={**candidate.metadata, "licence": "public-domain", "transform": "log1p"},
         domain="biological",
-    )
+    ), results
 
 

@@ -77,7 +77,7 @@ def fetch(candidate: CandidateInfo):
             api.dataset_download_files(id, path=str(extract_dir), unzip=True)
         except Exception as e:
             logger.warning("Failed to download Kaggle %s: %s", id, e)
-            return None
+            return None, []
     # Look for csv OR parquet; pick the largest file (assumed main table).
     data_files = (
         list(extract_dir.rglob("*.csv"))
@@ -86,7 +86,7 @@ def fetch(candidate: CandidateInfo):
     )
     if not data_files:
         logger.warning("No CSV/Parquet files found in Kaggle %s", id)
-        return None
+        return None, []
     data_path = max(data_files, key=lambda p: p.stat().st_size)
 
     try:
@@ -96,7 +96,7 @@ def fetch(candidate: CandidateInfo):
             df = pd.read_csv(data_path, low_memory=False)
     except Exception as e:
         logger.warning("Failed to read %s for Kaggle %s: %s", data_path.name, id, e)
-        return None
+        return None, []
 
     # Step 2: detect target column
     target_col = candidate.metadata.get("target_col")
@@ -107,9 +107,8 @@ def fetch(candidate: CandidateInfo):
 
     # Step 3: run hard rules
     result, data_results = hard_rules.run_hard_rules(X, y, candidate)
-    stats.record(candidate.id, candidate.source, candidate.name, data_results)
     if result is None:
-        return None
+        return None, []
 
     _, task_type = result
 
@@ -128,7 +127,7 @@ def fetch(candidate: CandidateInfo):
             "url": f"https://www.kaggle.com/datasets/{id}",
         },
         domain=candidate.domain,
-    )
+    ), data_results
 
 
 

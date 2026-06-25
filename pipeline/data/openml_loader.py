@@ -99,9 +99,10 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
     return candidates
 
 
-def fetch(candidate: CandidateInfo) -> Dataset | None: #aktuell werden hier auch noch die harten regeln überprüft auslagern?
+def fetch(candidate: CandidateInfo) -> tuple[Dataset | None, list]:
     """Downloads the actual data for one candidate and runs data-level hard rules.
-    Returns a Dataset object if everything passes, None if it fails.
+    Returns (Dataset, data_results) where data_results are the hard rule checks.
+    Dataset is None if hard rules failed.
     """
     did = int(candidate.id)
     logger.info("Downloading OpenML dataset %d (%s)...", did, candidate.name)
@@ -116,16 +117,15 @@ def fetch(candidate: CandidateInfo) -> Dataset | None: #aktuell werden hier auch
         )
     except Exception as e:
         logger.warning("Failed to download OpenML %d: %s", did, e)
-        return None
+        return None, []
 
     if X is None or y is None:
         logger.warning("OpenML %d: no data returned", did)
-        return None
+        return None, []
 
     result, data_results = hard_rules.run_hard_rules(X, y, candidate)
-    stats.record(candidate.id, candidate.source, candidate.name, data_results)
     if result is None:
-        return None
+        return None, data_results
 
     _, task_type = result
     logger.info(
@@ -146,7 +146,7 @@ def fetch(candidate: CandidateInfo) -> Dataset | None: #aktuell werden hier auch
             "url": candidate.url,
         },
         domain=candidate.domain,
-    )
+    ), data_results
 
 
 def _fetch_task_type(did: int) -> str:
