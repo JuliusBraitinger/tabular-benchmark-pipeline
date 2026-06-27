@@ -1,5 +1,5 @@
 # Local loader: load datasets that are stored in data/datasets/{id}/
-# for various data sources. Each dataset is expected to have X.parquet, y.parquet, and optionally meta.pkl.
+#takes csv and parquet files for X and y, and optional meta.pkl for metadata
 import logging
 import pandas as pd
 from pathlib import Path
