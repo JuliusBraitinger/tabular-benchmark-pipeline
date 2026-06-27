@@ -1,3 +1,6 @@
+# TCGA data loader - queries GDC API for gene expression, miRNA, and CNV data
+# downloads raw matrices, attaches clinical metadata, and runs hard rules validation
+
 import json
 import logging
 import os
