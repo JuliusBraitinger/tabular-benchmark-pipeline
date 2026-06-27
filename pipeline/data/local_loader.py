@@ -16,6 +16,31 @@ logger = logging.getLogger(__name__)
 DATASETS_DIR = Path("data/datasets")
 
 
+def datasets(dataset_dir):
+    # load X and y from CSV or parquet
+    X = None
+    y = None
+
+    X_csv = dataset_dir / "X.csv"
+    X_parquet = dataset_dir / "X.parquet"
+    y_csv = dataset_dir / "y.csv"
+    y_parquet = dataset_dir / "y.parquet"
+
+    if X_csv.exists():
+        X = pd.read_csv(X_csv)
+    elif X_parquet.exists():
+        X = pd.read_parquet(X_parquet)
+
+    if y_csv.exists():
+        y = pd.read_csv(y_csv).squeeze()
+    elif y_parquet.exists():
+        y = pd.read_parquet(y_parquet)
+        if isinstance(y, pd.DataFrame):
+            y = y.iloc[:, 0]
+
+    return X, y
+
+
 def list_candidates(max_candidates=50):
     candidates = []
 
@@ -25,17 +50,12 @@ def list_candidates(max_candidates=50):
 
         dataset_id = dataset_dir.name
 
-        X_path = dataset_dir / "X.parquet"
-        y_path = dataset_dir / "y.parquet"
-
-        if not X_path.exists() or not y_path.exists():
+        X, y = datasets(dataset_dir)
+        if X is None or y is None:
             stats.record(dataset_id, "local", dataset_id, [
-                RuleResult(rule="pre-filter", passed=False, reason="missing X.parquet or y.parquet")
+                RuleResult(rule="pre-filter", passed=False, reason="missing X/y files")
             ])
             continue
-
-        X = pd.read_parquet(X_path)
-        y = pd.read_parquet(y_path)
 
         n_samples = len(X)
         n_features = len(X.columns)
@@ -90,10 +110,7 @@ def list_candidates(max_candidates=50):
 def fetch(candidate):
     dataset_dir = DATASETS_DIR / candidate.id
 
-    X = pd.read_parquet(dataset_dir / "X.parquet")
-    y = pd.read_parquet(dataset_dir / "y.parquet")
-    if isinstance(y, pd.DataFrame):
-        y = y.iloc[:, 0]
+    X, y = datasets(dataset_dir)
 
     result, data_results = hard_rules.run_hard_rules(X, y, candidate)
     if result is None:
