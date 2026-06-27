@@ -205,7 +205,7 @@ def check_group(project_id, cancer_type, n_cases, primary_site, grp):
     sample_types = grp["sample_types"]
 
     # A5: open access only
-    if acc == "open":
+    if acc != "open":
         return None
 
     # A1: only accepted workflows
@@ -255,6 +255,7 @@ def check_group(project_id, cancer_type, n_cases, primary_site, grp):
             "workflow_type": wft,
             "primary_site": primary_site,
             "sample_types": sorted(sample_types),
+            "sample_file_id": file_id,
         },
         domain="biomedical",
     )
@@ -446,7 +447,7 @@ def parse_gene_expression(lines):
         if line.startswith("#") or line.startswith("gene_id") or line.startswith("N_"):
             continue
         parts = line.split("\t")
-        if len(parts) >= 5:
+        if len(parts) >= 4:
             try:
                 data[parts[1]] = float(parts[3])  # gene_name -> unstranded counts
             except ValueError:
