@@ -16,6 +16,13 @@ logger = logging.getLogger(__name__)
 DATASETS_DIR = Path("data/datasets")
 
 
+def save_target(dataset_dir, y):
+    # save target variable as y.csv
+    y_file = dataset_dir / "y.csv"
+    y.to_csv(y_file, index=False)
+    logger.info("Saved target to %s", y_file)
+
+
 def find_or_build_target(dataset_dir):
     # search for target variable in CSV files
     # currently only for testing with Mimmic datasets 
@@ -98,6 +105,9 @@ def datasets(dataset_dir):
     else:
         # search for target in other CSV files
         y = find_or_build_target(dataset_dir)
+        if y is not None:
+            # save the found target to y.csv
+            save_target(dataset_dir, y)
 
     return X, y
 
