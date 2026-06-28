@@ -8,7 +8,7 @@
 # Metric: classification uses adjusted balanced accuracy, regression uses R2
 # (both have chance = 0; see the threshold notes below).
 #
-# TODO: run TabPFN-2 to check whether the signal is TOO good -> flag / drop.
+# TODO: precision/recall for imbalanced datasets . Achtung random baseline
 from __future__ import annotations
 
 import numpy as np

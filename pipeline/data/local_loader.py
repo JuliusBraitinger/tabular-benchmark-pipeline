@@ -21,8 +21,10 @@ def find_or_build_target(dataset_dir):
     # currently only for testing with Mimmic datasets 
     targetNames = ["target", "hospital_expire_flag", "mortality", "outcome", "y","label"]
 
-    # search CSV files for target column
+    # search CSV files for target columns
     for csv_file in dataset_dir.glob("*.csv"):
+        if csv_file.stem == "X":
+            continue
         try:
             df = pd.read_csv(csv_file)
             for col in targetNames:
@@ -33,6 +35,19 @@ def find_or_build_target(dataset_dir):
             logger.debug("Error reading %s: %s", csv_file, e)
 
     logger.warning("No target variable found in %s", dataset_dir)
+
+    for parquet_file in dataset_dir.glob("*.parquet"):
+        if csv_file.stem == "X":
+            continue
+        try:
+            df = pd.read_parquet(parquet_file)
+            for col in targetNames:
+                if col in df.columns:
+                    logger.info("Found target '%s' in %s", col, csv_file.name)
+                    return df[col].squeeze()
+        except Exception as e:
+            logger.debug("Error reading %s: %s", parquet_file, e)
+
     return None
 
 
