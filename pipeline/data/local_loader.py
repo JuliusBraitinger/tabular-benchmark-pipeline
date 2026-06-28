@@ -16,6 +16,26 @@ logger = logging.getLogger(__name__)
 DATASETS_DIR = Path("data/datasets")
 
 
+def find_or_build_target(dataset_dir):
+    # search for target variable in CSV files
+    # currently only for testing with Mimmic datasets 
+    targetNames = ["target", "hospital_expire_flag", "mortality", "outcome", "y","label"]
+
+    # search CSV files for target column
+    for csv_file in dataset_dir.glob("*.csv"):
+        try:
+            df = pd.read_csv(csv_file)
+            for col in targetNames:
+                if col in df.columns:
+                    logger.info("Found target '%s' in %s", col, csv_file.name)
+                    return df[col].squeeze()
+        except Exception as e:
+            logger.debug("Error reading %s: %s", csv_file, e)
+
+    logger.warning("No target variable found in %s", dataset_dir)
+    return None
+
+
 def datasets(dataset_dir):
     # load X and y from CSV or parquet
     X = None
@@ -37,6 +57,9 @@ def datasets(dataset_dir):
         y = pd.read_parquet(y_parquet)
         if isinstance(y, pd.DataFrame):
             y = y.iloc[:, 0]
+    else:
+        # search for target in other CSV files
+        y = find_or_build_target(dataset_dir)
 
     return X, y
 
