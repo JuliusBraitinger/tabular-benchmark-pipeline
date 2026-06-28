@@ -17,10 +17,20 @@ DATASETS_DIR = Path("data/datasets")
 
 
 def save_target(dataset_dir, y):
-    # save target variable as y.csv
-    y_file = dataset_dir / "y.csv"
-    y.to_csv(y_file, index=False)
+    # save target in same format as X (csv or parquet)
+    X_csv = dataset_dir / "X.csv"
+    X_parquet = dataset_dir / "X.parquet"
+
+    if X_csv.exists():
+        y_file = dataset_dir / "y.csv"
+        y.to_csv(y_file, index=False)
+    elif X_parquet.exists():
+        y_file = dataset_dir / "y.parquet"
+        y.to_frame().to_parquet(y_file, index=False)
+
     logger.info("Saved target to %s", y_file)
+    
+
 
 
 def find_or_build_target(dataset_dir):
