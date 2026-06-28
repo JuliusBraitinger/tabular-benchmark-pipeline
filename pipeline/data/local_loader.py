@@ -48,6 +48,29 @@ def find_or_build_target(dataset_dir):
         except Exception as e:
             logger.debug("Error reading %s: %s", parquet_file, e)
 
+    # detect possible targets if not found
+    candidates = []
+    for file in dataset_dir.glob("*.csv"):
+        if file.stem == "X":
+            continue
+        try:
+            df = pd.read_csv(file)
+            for col in df.columns:
+                unique = df[col].nunique()
+                if unique > 10:
+                    continue
+                if df[col].isna().sum() / len(df) < 0.5:
+                    candidates.append({"file": file.name, "column": col, "cardinality": unique})
+        except:
+            pass
+
+    if candidates:
+        best = min(candidates, key=lambda c: c["cardinality"])
+        file = dataset_dir / best["file"]
+        df = pd.read_csv(file)
+        logger.info("Auto-selected target: '%s' from %s", best["column"], best["file"])
+        return df[best["column"]].squeeze()
+
     return None
 
 
