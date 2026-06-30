@@ -9,9 +9,8 @@ from pipeline.hard_rules import runner as hard_rules
 from pipeline.hard_rules.base import RuleResult
 from pipeline import stats
 from pipeline.config import CHEMBL_BASE_URL
-logger = logging.getLogger(__name__)
 
-CHEMBL_BASE_URL = CHEMBL_BASE_URL
+logger = logging.getLogger(__name__)
 MIN_COMPOUNDS = 100  
 
 def list_candidates(max_candidates=50):
@@ -20,10 +19,10 @@ def list_candidates(max_candidates=50):
 
 	# get human protein targets
 	try:
-		url = f"{CHEMBL_BASE_URL}/target.json?organism=Homo_sapiens&limit=200"
+		url = f"{CHEMBL_BASE_URL}/target.json?organism=Homo%20sapiens&limit=200"
 		response = requests.get(url, timeout=15)
 		targets_data = response.json()
-		targets = targets_data.get('target', [])
+		targets = targets_data.get('targets', [])
 
 		logger.info(f"Found {len(targets)} human targets")
 
@@ -45,7 +44,7 @@ def list_candidates(max_candidates=50):
 		seen_targets.add(target_id)
 
 		# get bioactivity count for this target
-		url = f"{CHEMBL_BASE_URL}/activity.json?target_id={target_id}&limit=1"
+		url = f"{CHEMBL_BASE_URL}/activity.json?target_chembl_id={target_id}&limit=1"
 		response = requests.get(url, timeout=10)
 		act_data = response.json()
 
