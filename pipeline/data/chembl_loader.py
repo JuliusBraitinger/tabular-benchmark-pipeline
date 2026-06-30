@@ -8,10 +8,10 @@ from pipeline.data.base import CandidateInfo, Dataset
 from pipeline.hard_rules import runner as hard_rules
 from pipeline.hard_rules.base import RuleResult
 from pipeline import stats
-
+from pipeline.config import CHEMBL_BASE_URL
 logger = logging.getLogger(__name__)
 
-CHEMBL_BASE_URL = "https://www.ebi.ac.uk/chembl/api/data"
+CHEMBL_BASE_URL = CHEMBL_BASE_URL
 MIN_COMPOUNDS = 100  
 
 def list_candidates(max_candidates=50):
@@ -20,7 +20,7 @@ def list_candidates(max_candidates=50):
 
 	# get human protein targets
 	try:
-		url = f"{CHEMBL_BASE_URL}/targets.json?organism=Homo_sapiens&limit=200"
+		url = f"{CHEMBL_BASE_URL}/target.json?organism=Homo_sapiens&limit=200"
 		response = requests.get(url, timeout=15)
 		targets_data = response.json()
 		targets = targets_data.get('target', [])

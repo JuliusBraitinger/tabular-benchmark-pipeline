@@ -55,3 +55,4 @@ NCBI_API_KEY = os.getenv("NCBI_API_KEY")
 GDC_BASE_URL = "https://api.gdc.cancer.gov"
 ENTREZ_BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 REQUEST_DELAY = 0.4  # seconds between API calls
+CHEMBL_BASE_URL = "https://www.ebi.ac.uk/chembl/api/data"
