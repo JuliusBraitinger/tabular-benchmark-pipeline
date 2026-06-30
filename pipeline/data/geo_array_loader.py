@@ -138,6 +138,26 @@ GEO_QUERIES = [
     f'{_QUERY_BASE} AND ("differentiation"[All Fields])',
 ]
 
+# non-genetic GEO data: proteomics
+_QUERY_BASE_PROTEOMICS = (
+    '"Homo sapiens"[ORGN] AND gse[ETYP]'
+    ' AND ("Protein expression profiling" OR "proteomics")[DataSet Type]'
+    ' AND 500:1000000[Number of Samples]'
+)
+GEO_QUERIES += [
+    f'{_QUERY_BASE_PROTEOMICS} AND ("disease"[All Fields] OR "cancer"[All Fields])',
+]
+
+# non-genetic GEO data: metabolomics
+_QUERY_BASE_METABOLOMICS = (
+    '"Homo sapiens"[ORGN] AND gse[ETYP]'
+    ' AND ("Metabolite profiling" OR "metabolomics")[DataSet Type]'
+    ' AND 500:1000000[Number of Samples]'
+)
+GEO_QUERIES += [
+    f'{_QUERY_BASE_METABOLOMICS} AND ("disease"[All Fields] OR "biomarker"[All Fields])',
+]
+
 
 # Entrez wrappers.
 # Entrez is NCBI's search API. We use it to find GEO study IDs (UIDs) and
