@@ -44,7 +44,7 @@ def list_candidates(max_candidates=50):
 		seen_targets.add(target_id)
 
 		# get bioactivity count for this target
-		url = f"{CHEMBL_BASE_URL}/activity.json?target_chembl_id={target_id}&limit=1"
+		url = f"{CHEMBL_BASE_URL}/activity.json?target_chembl_id={target_id}&limit=100"
 		response = requests.get(url, timeout=10)
 		act_data = response.json()
 
@@ -57,14 +57,23 @@ def list_candidates(max_candidates=50):
 
 		logger.info(f"{target_name}: {total_count} bioactivities")
 
+		# get task type from activity data (continuous = regression, binary = classification)
+		activities = act_data.get('activities', [])
+		regression_types = {'IC50', 'EC50', 'Ki', 'Kd'}
+		has_regression = any(a.get('standard_type') in regression_types for a in activities)
+		task_type = "regression" if has_regression else "classification"
+
+		# n_features determined during fetch() when we load actual descriptors
+		n_features = None
+
 			# create candidate
 		candidate = CandidateInfo(
 				id=target_id,
 				source="chembl",
 				name=target_name,
 				n_samples=total_count,
-				n_features=2000,  # approximate molecular descriptors
-				task_type="regression",  # IC50 prediction
+				n_features=None,
+				task_type=task_type,
 				licence="CC0",
 				url=f"https://www.ebi.ac.uk/chembl/target/{target_id}",
 				metadata={"target_type": target.get('target_type', 'protein')},
