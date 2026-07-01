@@ -88,12 +88,13 @@ def list_candidates(max_candidates=50):
     return candidates
 
 
-
+def fetch(candidate):
     target_id = candidate.id
 
-    # download every measurement for this target, page by page. each one already
-    # has the molecule's SMILES and potency, so no extra request per molecule.
-    molecules = {}  # molecule_id -> {"smiles": ..., "values": [...]}
+    # download every measurement for this target, one page at a time.
+    #    each record already has the molecule's SMILES and its potency,
+    #    so there's no need for a separate request per molecule.
+    records = []
     url = (
         f"{CHEMBL_BASE_URL}/activity.json"
         f"?target_chembl_id={target_id}&pchembl_value__isnull=false&limit=1000"
@@ -101,45 +102,42 @@ def list_candidates(max_candidates=50):
     while url:
         data = requests.get(url, timeout=30).json()
         for activity in data["activities"]:
-            mol_id = activity.get("molecule_chembl_id")
             smiles = activity.get("canonical_smiles")
             value = activity.get("pchembl_value")
-            if not mol_id or not smiles or value is None:
-                continue
-            if mol_id not in molecules:
-                molecules[mol_id] = {"smiles": smiles, "values": []}
-            molecules[mol_id]["values"].append(float(value))
+            if smiles and value is not None:
+                records.append({"smiles": smiles, "pchembl": float(value)})
 
-        # ChEMBL gives us the next page, or null when there are no more
-        next_page = data["page_meta"]["next"]
-        url = f"https://www.ebi.ac.uk{next_page}" if next_page else None
+        next_page = data["page_meta"]["next"]  # ChEMBL gives the next page, or null when done
+        url = f"{CHEMBL_BASE_URL}{next_page}" if next_page else None
         time.sleep(config.REQUEST_DELAY)
 
-    if not molecules:
-        logger.warning("no usable data for %s", target_id)
+    if not records:
+        logger.warning("no usable data")
         return None, []
 
-    # build the table: one row per molecule
-    rows, targets, index = [], [], []
-    for mol_id, info in molecules.items():
-        mol = Chem.MolFromSmiles(info["smiles"])
+    #  a molecule can be measured several times, so keep one row per molecule
+    #    and use the median potency.
+    table = pd.DataFrame(records).groupby("smiles", as_index=False)["pchembl"].max()
+
+    # turn each molecule's SMILES into a 2048-bit fingerprint (the features)
+    rows, potency = [], []
+    for smiles, value in zip(table["smiles"], table["pchembl"]):
+        mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             continue  # couldn't read this molecule's structure
         fingerprint = fp_generator.GetFingerprint(mol)
         bits = np.zeros(FP_N_BITS, dtype=np.int8)
         DataStructs.ConvertToNumpyArray(fingerprint, bits)
         rows.append(bits)
-        targets.append(np.median(info["values"]))  # one molecule can have several measurements
-        index.append(mol_id)
+        potency.append(value)
 
-    X = pd.DataFrame(np.array(rows), columns=[f"fp_{i}" for i in range(FP_N_BITS)], index=index)
-    y = pd.Series(targets, index=index, name="pchembl_value")
+    X = pd.DataFrame(np.array(rows), columns=[f"fp_{i}" for i in range(FP_N_BITS - 1)])
+    y = pd.Series(potency, name="pchembl_value")
     logger.info("%s: %d molecules x %d features", target_id, len(X), X.shape[1])
 
     if len(X) < MIN_ROWS:
         return None, []
 
-    # run the data hard rules (signal, dimensions, ...)
     result, data_results = hard_rules.run_hard_rules(X, y, candidate)
     if result is None:
         return None, data_results
