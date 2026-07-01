@@ -117,7 +117,7 @@ def fetch(candidate):
 
     #  a molecule can be measured several times, so keep one row per molecule
     #    and use the median potency.
-    table = pd.DataFrame(records).groupby("smiles", as_index=False)["pchembl"].max()
+    table = pd.DataFrame(records).groupby("smiles", as_index=False)["pchembl"].median()
 
     # turn each molecule's SMILES into a 2048-bit fingerprint (the features)
     rows, potency = [], []

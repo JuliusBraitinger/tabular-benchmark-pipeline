@@ -9,3 +9,4 @@ kaggle>=1.6
 ucimlrepo>=0.0.7
 tabpfn >=2.0,<3  # TabPFN v2 (2.x); 6.x+ packages pull the v3 model
 plotly>=5.0
+rdkit

@@ -28,7 +28,7 @@ KAGGLE_TARGET_SUFFIXES = ("_label", "_target", "_class")
 # --- Licence allow-list (A5) ---
 ALLOWED_LICENCES = frozenset({
     "cc0-1.0", "cc0", "public-domain",
-    "cc-by-4.0", "cc-by-sa-4.0",
+    "cc-by-4.0", "cc-by-sa-4.0", "cc-by-sa-3.0",  # ChEMBL is CC BY-SA 3.0
     "mit", "apache-2.0",
     "bsd-2-clause", "bsd-3-clause",
     "odbl-1.0",
