@@ -108,7 +108,7 @@ def fetch(candidate):
                 records.append({"smiles": smiles, "pchembl": float(value)})
 
         next_page = data["page_meta"]["next"]  # ChEMBL gives the next page, or null when done
-        url = f"{CHEMBL_BASE_URL}{next_page}" if next_page else None
+        url = f"https://www.ebi.ac.uk{next_page}"  if next_page else None
         time.sleep(config.REQUEST_DELAY)
 
     if not records:
@@ -131,7 +131,7 @@ def fetch(candidate):
         rows.append(bits)
         potency.append(value)
 
-    X = pd.DataFrame(np.array(rows), columns=[f"fp_{i}" for i in range(FP_N_BITS - 1)])
+    X = pd.DataFrame(np.array(rows), columns=[f"fp_{i}" for i in range(FP_N_BITS)])
     y = pd.Series(potency, name="pchembl_value")
     logger.info("%s: %d molecules x %d features", target_id, len(X), X.shape[1])
 
