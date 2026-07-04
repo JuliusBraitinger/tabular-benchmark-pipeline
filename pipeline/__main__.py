@@ -67,12 +67,12 @@ def main() -> None:
 
     # Phase 1: scrape candidates (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
+    # small test run: every loader, up to 10 candidates each. geo_array is the
+    # slow one (a Series Matrix download per study) so expect it to lag.
     candidates = registry.list_candidates(
-        sources=["openml", "tcga", "uci", "geo_rnaseq"], max_per_source=100
+        sources=["openml", "tcga", "geo_array", "geo_rnaseq", "uci", "local", "chembl"],
+        max_per_source=10,
     )
-    # geo_array scrape is slow (one Series Matrix download per study), so cap it
-    # tighter than the fast sources — separate call since max_per_source is shared.
-    candidates += registry.list_candidates(sources=["geo_array"], max_per_source=25)
 
     log.info("Got %d candidates", len(candidates))
 
@@ -151,6 +151,16 @@ def main() -> None:
 
     soft_stats.save_csv(str(RESULTS_DIR / "soft_stats.csv"))
     log.info("Saved soft_stats.csv")
+
+    # Phase 5: per-dataset evaluation reports (characterisation, not a gate).
+    # Skippable via PIPELINE_SKIP_REPORTS since it retrains a model per dataset.
+    if os.environ.get("PIPELINE_SKIP_REPORTS"):
+        log.info("PIPELINE_SKIP_REPORTS set -- skipping Phase 5 reports")
+        return
+    log.info("=== Phase 5: per-dataset reports ===")
+    from pipeline.viz.reports import generate_reports
+    csv = generate_reports(saved_dirs, _load_dataset, RESULTS_DIR)
+    log.info("Wrote per-dataset report.html files + %s", csv)
 
 
 if __name__ == "__main__":

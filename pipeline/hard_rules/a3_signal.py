@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import balanced_accuracy_score, make_scorer
 from sklearn.model_selection import cross_val_score, permutation_test_score
 from sklearn.preprocessing import LabelEncoder
 from tabpfn import TabPFNClassifier, TabPFNRegressor
 
 from pipeline.hard_rules.base import RuleResult
+from pipeline.viz.reports import make_reference_model
 
 P_VALUE_THRESHOLD = 0.05  # signal must be statistically distinguishable from random
 # absolute-score floor (the "strong enough" gate, on top of the p-value).
@@ -35,8 +35,6 @@ MIN_REG_SCORE = 0.05
 MAX_CLF_SCORE = 0.98  # adjusted balanced accuracy
 MAX_REG_SCORE = 0.98
 N_PERMUTATIONS = 100
-N_ESTIMATORS = 50
-MAX_DEPTH = 5
 CV_FOLDS = 3
 # TabPFN-2 limits (used to confirm trivial-signal verdicts from the RF)
 TABPFN_MAX_FEATURES = 500
@@ -66,16 +64,12 @@ def check_data(X, y, task_type="classification", **_kwargs):
 
     # pick the right model and metric based on task type
     if "classification" in task_type:
-        model = RandomForestClassifier(
-            n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=42, n_jobs=-1
-        )
+        model = make_reference_model(task_type)
         # adjusted=True -> chance-corrected (0 = random, 1 = perfect) regardless of #classes
         scoring = make_scorer(balanced_accuracy_score, adjusted=True)
         metric_name = "adj_balanced_accuracy"
     else:
-        model = RandomForestRegressor(
-            n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=42, n_jobs=-1
-        )
+        model = make_reference_model(task_type)
         scoring = "r2"
         metric_name = "r2"
 
