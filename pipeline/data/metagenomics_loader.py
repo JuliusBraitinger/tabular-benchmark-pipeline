@@ -1,6 +1,10 @@
-# Human-gut metagenomics loader. Downloads Pasolli's MetAML marker matrix,
-# prevalence-filters the markers, and exposes it as one pooled healthy-vs-disease
-# candidate.
+# Human gut metagenomics loader.
+#
+# What gets loaded (one dataset):
+#   rows     = people / gut samples (~3600)
+#   features = ~34k microbe markers, each 0 or 1 = is that microbe present
+#   target   = healthy vs disease  ->  binary classification
+# Source: Pasolli's MetAML marker table, downloaded automatically.
 
 import bz2
 import logging
@@ -40,7 +44,7 @@ def list_candidates(max_candidates=50):
             label, _, rest = line.partition("\t")
             rest = rest.rstrip("\n")
             if n is None:
-                n = rest.count("\t")                # number of samples
+                n = rest.count("\t") + 1            # number of samples (#tabs + 1)
                 min_present = int(MIN_PREVALENCE * n)
             if label == "disease":
                 disease = rest.split("\t")
