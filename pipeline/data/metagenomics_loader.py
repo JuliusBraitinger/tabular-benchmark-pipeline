@@ -27,6 +27,39 @@ HEALTHY = {"n", "nd", "n_relative"}     # disease codes counted as healthy
 DATASET_ID = "gut-markers-disease"
 
 
+def build_dataset():
+    # download the marker file once (cached), parse it, keep only prevalent
+    # markers, and build X (samples x markers) + y (healthy vs disease).
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    raw = CACHE_DIR / "marker_presence.txt.bz2"
+    if not raw.exists():
+        logger.info("downloading MetAML marker matrix (~23MB)...")
+        resp = requests.get(MARKER_URL, timeout=180)
+        resp.raise_for_status()
+        raw.write_bytes(resp.content)
+
+    disease, markers, names, n_samples = None, [], [], None
+    with bz2.open(raw, "rt") as f:
+        for line in f:
+            name, _, rest = line.partition("\t")
+            values = rest.rstrip("\n").split("\t")
+            if n_samples is None:
+                n_samples = len(values)
+            if name == "disease":
+                disease = values
+                continue
+            ones = values.count("1")
+            if ones + values.count("0") != n_samples:    # a metadata (text) row, not a marker
+                continue
+            if ones >= MIN_PREVALENCE * n_samples:        # keep only prevalent markers
+                markers.append(np.array(values, dtype=np.int8))
+                names.append(name)
+
+    X = pd.DataFrame(np.array(markers).T, columns=names)  # rows = samples, cols = markers
+    y = pd.Series(["healthy" if d.strip() in HEALTHY else "disease" for d in disease], name="target")
+    return X, y
+
+
 def list_candidates(max_candidates=50): #for now just run metadata checks because not target variable
     # download the marker matrix once, then reuse the cached copy
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
