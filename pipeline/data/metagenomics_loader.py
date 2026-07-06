@@ -27,7 +27,7 @@ HEALTHY = {"n", "nd", "n_relative"}     # disease codes counted as healthy
 DATASET_ID = "gut-markers-disease"
 
 
-def list_candidates(max_candidates=50):
+def list_candidates(max_candidates=50): #for now just run metadata checks because not target variable
     # download the marker matrix once, then reuse the cached copy
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     raw = CACHE_DIR / "marker_presence.txt.bz2"
@@ -39,7 +39,7 @@ def list_candidates(max_candidates=50):
 
     # parse: rows = features (+ a few metadata rows), columns = samples
     disease, names, rows, n = None, [], [], None
-    with bz2.open(raw, "rt") as f:
+    with bz2.open(raw, "rt") as f: #open the compressed marker matrix and read it line by line
         for line in f:
             label, _, rest = line.partition("\t")
             rest = rest.rstrip("\n")
@@ -85,7 +85,7 @@ def list_candidates(max_candidates=50):
 
 
 def fetch(candidate):
-    # download (cached) + parse + prevalence-filter, then build the table
+    # download the marker file once (cached)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     raw = CACHE_DIR / "marker_presence.txt.bz2"
     if not raw.exists():
@@ -94,29 +94,25 @@ def fetch(candidate):
         resp.raise_for_status()
         raw.write_bytes(resp.content)
 
-    disease, names, rows, n = None, [], [], None
-    with bz2.open(raw, "rt") as f:
+    disease, markers, names, n_samples = None, [], [], None
+    with bz2.open(raw, "rt") as f: 
         for line in f:
-            label, _, rest = line.partition("\t")
-            rest = rest.rstrip("\n")
-            if n is None:
-                n = rest.count("\t") + 1                # #samples = #tabs + 1
-                min_present = int(MIN_PREVALENCE * n)
-            if label == "disease":
-                disease = rest.split("\t")
+            name, _, rest = line.partition("\t")
+            values = rest.rstrip("\n").split("\t")
+            if n_samples is None:
+                n_samples = len(values)
+            if name == "disease":
+                disease = values
                 continue
-            vals = "\t" + rest
-            ones, zeros = vals.count("\t1"), vals.count("\t0")
-            if ones + zeros != n:                       # skip non-binary (metadata) rows
+            ones = values.count("1")
+            if ones + values.count("0") != n_samples:    # a metadata (text) row, not a marker
                 continue
-            if ones >= min_present:                     # keep only prevalent markers
-                rows.append(np.array(rest.split("\t"), dtype=np.int8))
-                names.append(label)
+            if ones >= MIN_PREVALENCE * n_samples:        # keep only prevalent markers
+                markers.append(np.array(values, dtype=np.int8))
+                names.append(name)
 
-    idx = [f"s{i}" for i in range(n)]
-    X = pd.DataFrame(np.array(rows).T, index=idx, columns=names)
-    y = pd.Series(["healthy" if str(d).strip() in HEALTHY else "disease" for d in disease],
-                  index=idx, name="target")
+    X = pd.DataFrame(np.array(markers).T, columns=names)  # rows = samples, cols = markers
+    y = pd.Series(["healthy" if d.strip() in HEALTHY else "disease" for d in disease], name="target")
 
     results = hard_rules.run_data_checks(X=X, y=y, task_type="classification")
     if not hard_rules.all_passed(results):
