@@ -1,9 +1,9 @@
 # Human gut metagenomics loader.
 #
-# What gets loaded (one dataset):
-#   rows     = people / gut samples (~3600)
+# What gets loaded (one dataset PER disease):
+#   rows     = gut samples: all healthy people + one disease's patients
 #   features = ~34k microbe markers, each 0 or 1 = is that microbe present
-#   target   = healthy vs disease  ->  binary classification
+#   target   = healthy vs <disease>  ->  binary classification
 # Source: Pasolli's MetAML marker table, downloaded automatically.
 
 import bz2
@@ -23,13 +23,13 @@ logger = logging.getLogger(__name__)
 MARKER_URL = "https://raw.githubusercontent.com/segatalab/metaml/master/data/marker_presence.txt.bz2"
 CACHE_DIR = Path(os.environ.get("PIPELINE_CACHE", "/tmp")) / "metagenomics_cache"
 MIN_PREVALENCE = 0.10                   # drop markers present in <10% of samples
+MIN_CASES = 50                          
 HEALTHY = {"n", "nd", "n_relative"}     # disease codes counted as healthy
-DATASET_ID = "gut-markers-disease"
 
 
 def build_dataset():
     # download the marker file once (cached), parse it, keep only prevalent
-    # markers, and build X (samples x markers) + y (healthy vs disease).
+    # markers. returns X (samples x markers) + the disease label per sample.
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     raw = CACHE_DIR / "marker_presence.txt.bz2"
     if not raw.exists():
@@ -56,51 +56,65 @@ def build_dataset():
                 names.append(name)
 
     X = pd.DataFrame(np.array(markers).T, columns=names)  # rows = samples, cols = markers
-    y = pd.Series(["healthy" if d.strip() in HEALTHY else "disease" for d in disease], name="target")
-    return X, y
+    disease = pd.Series([d.strip() for d in disease], name="disease")  # one label per sample
+    return X, disease
 
 
-def list_candidates(max_candidates=50): #for now just run metadata checks because not target variable
-    X, _ = build_dataset()          # only need the shape here (target not used)
-    n_samples, n_features = X.shape
+def list_candidates(max_candidates=50):
+    X, disease = build_dataset()
 
-    results = hard_rules.run_metadata_checks(
-        n_samples=n_samples, n_features=n_features, task_type="classification",
-        licence="cc-by-4.0", source="metagenomics", name=DATASET_ID,
-    )
-    if not hard_rules.all_passed(results):
-        logger.info("metagenomics rejected: %s",
-                    [r.reason for r in hard_rules.failed_rules(results)])
-        return []
+    # one candidate per disease that has enough patients (skip the healthy labels)
+    candidates = []
+    for label, n_cases in disease.value_counts().items():
+        if label in HEALTHY or n_cases < MIN_CASES:
+            continue
+        n_rows = int((disease.isin(HEALTHY) | (disease == label)).sum())  # healthy + this disease
 
-    return [CandidateInfo(
-        id=DATASET_ID,
-        source="metagenomics",
-        name="Human gut markers (healthy vs disease)",
-        n_samples=n_samples,
-        n_features=n_features,
-        task_type="classification",
-        licence="cc-by-4.0",
-        url="https://github.com/segatalab/metaml",
-        metadata={},
-        domain="biological",
-    )]
+        results = hard_rules.run_metadata_checks(
+            n_samples=n_rows, n_features=X.shape[1], task_type="classification",
+            licence="cc-by-4.0", source="metagenomics", name=label,
+        )
+        if not hard_rules.all_passed(results):
+            continue
+
+        candidates.append(CandidateInfo(
+            id=f"gut-{label}",
+            source="metagenomics",
+            name=f"Human gut markers (healthy vs {label})",
+            n_samples=n_rows,
+            n_features=X.shape[1],
+            task_type="classification",
+            licence="cc-by-4.0",
+            url="https://github.com/segatalab/metaml",
+            metadata={"disease": label},          # fetch needs to know which disease
+            domain="biological",
+        ))
+        if len(candidates) >= max_candidates:
+            break
+
+    return candidates
 
 
 def fetch(candidate):
-    X, y = build_dataset()
+    X, disease = build_dataset()
+    target = candidate.metadata["disease"]
+
+    # keep the healthy samples + this disease's patients, then label them
+    keep = disease.isin(HEALTHY) | (disease == target)
+    X = X[keep].reset_index(drop=True)
+    y = pd.Series(["healthy" if d in HEALTHY else "disease" for d in disease[keep]], name="target")
 
     results = hard_rules.run_data_checks(X=X, y=y, task_type="classification")
     if not hard_rules.all_passed(results):
         return None, results
 
-        return Dataset(
+    return Dataset(
         id=candidate.id,
         source="metagenomics",
         name=candidate.name,
         X=X,
         y=y,
         task_type="classification",
-        metadata={"licence": "cc-by-4.0"},
+        metadata={"licence": "cc-by-4.0", "disease": target},
         domain="biological",
     ), results
