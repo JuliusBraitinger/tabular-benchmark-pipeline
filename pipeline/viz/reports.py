@@ -29,8 +29,7 @@ def make_reference_model(task_type, max_features=None):
 
 def make_report_model(task_type, max_features=None):
     # the report's model: stronger than the gate so metrics reflect *achievable*
-    # quality, not just baseline signal. On ChEMBL this ~doubled R2 (0.22 -> 0.40)
-    # over the depth-5 gate while staying fast (~1s/dataset).
+    # quality, not just baseline signal.
     kw = dict(n_estimators=200, max_depth=20, random_state=42, n_jobs=-1)
     if max_features:
         kw["max_features"] = max_features
@@ -46,6 +45,7 @@ def evaluate_dataset(ds):
         y = pd.Series(LabelEncoder().fit_transform(y), index=X.index)
         keep = y.isin(y.value_counts().loc[lambda c: c >= CV_FOLDS].index)  # drop classes too rare for a fold
         X, y = X.loc[keep], y.loc[keep]
+        y = pd.Series(LabelEncoder().fit_transform(y), index=X.index)  # re-encode so labels stay 0..K-1 contiguous
     if len(X) < CV_FOLDS or (clf and y.nunique() < 2):
         raise ValueError(f"too little data to evaluate ({len(X)} rows)")
     if len(X) > 10_000:  # cap huge datasets so CV stays quick
@@ -203,11 +203,11 @@ def generate_reports(ds_dirs, load_dataset, results_dir="."):
         log.info("[%d/%d] report %s", i, len(ds_dirs), ds.id)
         try:
             ev = evaluate_dataset(ds)
+            name = "".join(c if c.isalnum() or c in "-_." else "_" for c in str(ev["id"]))  # filesystem-safe id
+            (reports_dir / f"{name}.html").write_text(build_html(ev), encoding="utf-8")
         except Exception:
-            log.exception("  report failed for %s", ds.id)
+            log.exception("  report failed for %s -- skipping (run continues)", ds.id)
             continue
-        name = "".join(c if c.isalnum() or c in "-_." else "_" for c in str(ev["id"]))  # filesystem-safe id
-        (reports_dir / f"{name}.html").write_text(build_html(ev), encoding="utf-8")
         rows.append({"id": ev["id"], "source": ev["source"], "task": ev["task"],
                      "n": ev["n"], "p": ev["p"], **ev["metrics"]})
     csv = str(Path(results_dir) / "metrics.csv")
