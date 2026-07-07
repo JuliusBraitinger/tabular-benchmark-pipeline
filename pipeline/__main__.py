@@ -27,7 +27,7 @@ from pipeline.soft_rules import s6_class_balance as s6
 OUTPUT_DIR = Path(os.environ.get("PIPELINE_DATA", "data")) / "datasets"
 # rule_stats/soft_stats/sankey land here: under PIPELINE_DATA on the cluster, cwd locally
 RESULTS_DIR = Path(os.environ.get("PIPELINE_DATA", "."))
-MAX_SAVED_DATASETS = 600  # total cap across all sources; ~100/source target after A3/A6 rejections
+MAX_SAVED_DATASETS = 120  # safety ceiling above the ~80-100 target (per-source caps do the balancing)
 
 
 def _save_dataset(ds: Dataset, output_dir: Path) -> Path:
@@ -67,13 +67,12 @@ def main() -> None:
 
     # Phase 1: scrape candidates (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
-    # small test run: every loader, up to 10 candidates each. geo_array is the
-    # slow one (a Series Matrix download per study) so expect it to lag.
+    # full run: fast sources at 40 candidates each; geo_array capped lower in a
+    # separate call because its scrape is slow (a Series Matrix download per study).
     candidates = registry.list_candidates(
-        sources=["openml", "tcga", "geo_array", "geo_rnaseq", "uci", "local", "chembl"],
-        max_per_source=10,
+        sources=["chembl", "geo_array", "tcga", "geo_rnaseq", "metagenomics", "openml", "uci", "local"],
+        max_per_source=40,
     )
-
     log.info("Got %d candidates", len(candidates))
 
     # Phase 2: fetch each dataset, save to disk, then drop from memory.

@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # --- Dimension thresholds (A4) ---
-MIN_ROWS = 1000
+MIN_ROWS = 500
 MIN_FEATURES = 1000
 # Upper bound: a 16 GB box can't hold a dense float32 matrix much larger than
 # this once concat / pyarrow / joblib copies are factored in. Microarray
