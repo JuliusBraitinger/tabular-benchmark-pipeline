@@ -70,6 +70,7 @@ def list_candidates(max_candidates=50):
             skip=("A4",),
         )
         if not hard_rules.all_passed(results):
+            stats.record(acc, "geo_rnaseq", acc, results, "biological")
             continue
 
         candidates.append(CandidateInfo(

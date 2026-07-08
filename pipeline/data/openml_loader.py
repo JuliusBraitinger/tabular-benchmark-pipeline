@@ -19,7 +19,6 @@ import pandas as pd
 from pipeline.config import ACCEPTED_TASKS, MIN_FEATURES, MIN_ROWS  # imports thresholds from config.py
 from pipeline.data.base import CandidateInfo, Dataset, infer_domain
 from pipeline.hard_rules import runner as hard_rules  # hard rule checks
-from pipeline.hard_rules.base import RuleResult
 from pipeline import stats
 
 logger = logging.getLogger(__name__)
@@ -78,17 +77,10 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
         fmt = str(row.get("format", "")).lower()
         domain = get_openml_domain(did)
 
-        # Record pre-filter rejections
+        # cheap pre-filters (not tracked): too small, or a format pandas can't load
         if n_features < MIN_FEATURES or n_samples < MIN_ROWS:
-            stats.record(str(did), "openml", name, [
-                RuleResult(rule="a4", passed=False, reason=f"N={n_samples} < {MIN_ROWS} or P={n_features} < {MIN_FEATURES}")
-            ], domain)
             continue
-
         if fmt == "sparse_arff":
-            stats.record(str(did), "openml", name, [
-                RuleResult(rule="a4", passed=False, reason="sparse_arff format (unloadable)")
-            ], domain)
             continue
 
         # ask OpenML what kind of task this dataset is for (classification/regression)

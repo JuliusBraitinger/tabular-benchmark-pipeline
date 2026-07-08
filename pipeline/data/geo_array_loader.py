@@ -32,7 +32,6 @@ from pipeline.config import (
 )
 from pipeline.data.base import CandidateInfo, Dataset
 from pipeline.hard_rules import runner as hard_rules
-from pipeline.hard_rules.base import RuleResult
 
 logger = logging.getLogger(__name__)
 
@@ -355,28 +354,18 @@ def list_candidates(max_candidates=50):
                 logger.info("  Parsing %s (N=%d)...", accession, n_samples)
                 meta = _parse_geoparse_metadata(accession)
 
-                # if we couldn't figure out a task type, skip
+                # pre-filters (not tracked): no target contrast, or feature count out of range
                 if meta["task_type"] == "unknown":
                     logger.debug("  %s: no tumor/normal contrast, skipping", accession)
-                    stats.record(accession, "geo_array", title, [
-                        RuleResult(rule="A1", passed=False, reason="no tumor/normal contrast")
-                    ], "biological")
                     continue
 
-                # feature count check (if we have it)
                 n_features = meta["n_features"]
                 if n_features is not None and n_features < MIN_FEATURES:
                     logger.debug("  %s: P=%d < %d, skipping", accession, n_features, MIN_FEATURES)
-                    stats.record(accession, "geo_array", title, [
-                        RuleResult(rule="A4", passed=False, reason=f"P={n_features} < {MIN_FEATURES}")
-                    ], "biological")
                     continue
                 if n_features is not None and n_features > MAX_FEATURES:
                     logger.debug("  %s: P=%d > %d, skipping (won't fit in RAM)",
                                  accession, n_features, MAX_FEATURES)
-                    stats.record(accession, "geo_array", title, [
-                        RuleResult(rule="A4", passed=False, reason=f"P={n_features} > {MAX_FEATURES} (RAM cap)")
-                    ], "biological")
                     continue
 
                 # run the central metadata hard rules
@@ -389,6 +378,7 @@ def list_candidates(max_candidates=50):
                     name=title,
                 )
                 if not hard_rules.all_passed(results):
+                    stats.record(accession, "geo_array", title, results, "biological")
                     continue
 
                 # passed everything -> build a CandidateInfo and add it

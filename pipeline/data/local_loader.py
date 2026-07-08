@@ -7,7 +7,6 @@ import pickle
 
 from pipeline.data.base import CandidateInfo, Dataset
 from pipeline.hard_rules import runner as hard_rules
-from pipeline.hard_rules.base import RuleResult
 from pipeline import stats
 
 logger = logging.getLogger(__name__)
@@ -133,10 +132,7 @@ def list_candidates(max_candidates=50):
 
         X, y = datasets(dataset_dir)
         if X is None or y is None:
-            stats.record(dataset_id, "local", dataset_id, [
-                RuleResult(rule="pre-filter", passed=False, reason="missing X/y files")
-            ])
-            continue
+            continue  # no X/y files to load
 
         n_samples = len(X)
         n_features = len(X.columns)

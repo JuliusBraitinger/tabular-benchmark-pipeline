@@ -21,7 +21,7 @@ from rdkit import Chem, DataStructs
 from rdkit.Chem import rdFingerprintGenerator
 
 from pipeline import config
-from pipeline.config import CHEMBL_BASE_URL, MIN_ROWS
+from pipeline.config import CHEMBL_BASE_URL
 from pipeline.data.base import CandidateInfo, Dataset
 from pipeline.hard_rules import runner as hard_rules
 
@@ -77,7 +77,7 @@ def list_candidates(max_candidates=50):
             )
             count = get_json(count_url)["page_meta"]["total_count"]
             if count < MIN_BIOACTIVITIES:
-                continue
+                continue  # too few measurements to bother, pre-filter
 
             logger.info("%s (%s): %d measurements", target_name, target_id, count)
             candidates.append(CandidateInfo(
@@ -148,9 +148,6 @@ def fetch(candidate):
     X = pd.DataFrame(np.array(rows), columns=[f"fp_{i}" for i in range(FP_N_BITS)])
     y = pd.Series(potency, name="pchembl_value")
     logger.info("%s: %d molecules x %d features", target_id, len(X), X.shape[1])
-
-    if len(X) < MIN_ROWS:
-        return None, []
 
     result, data_results = hard_rules.run_hard_rules(X, y, candidate)
     if result is None:

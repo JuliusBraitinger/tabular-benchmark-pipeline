@@ -16,6 +16,7 @@ import pandas as pd
 import requests
 
 from pipeline.data.base import CandidateInfo, Dataset
+from pipeline import stats
 from pipeline.hard_rules import runner as hard_rules
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,8 @@ def list_candidates(max_candidates=50):
             licence="cc-by-4.0", source="metagenomics", name=label,
         )
         if not hard_rules.all_passed(results):
+            stats.record(f"gut-{label}", "metagenomics",
+                         f"Human gut markers (healthy vs {label})", results, "biological")
             continue
 
         candidates.append(CandidateInfo(

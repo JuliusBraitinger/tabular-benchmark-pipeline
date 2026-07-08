@@ -14,7 +14,6 @@ from pipeline import stats
 from pipeline.config import MAX_FEATURES, MIN_FEATURES, REQUEST_DELAY, MIN_ROWS
 from pipeline.data.base import CandidateInfo, Dataset, infer_domain
 from pipeline.hard_rules import runner as hard_rules
-from pipeline.hard_rules.base import RuleResult
 
 
 logger = logging.getLogger(__name__)
@@ -117,9 +116,6 @@ def list_candidates(max_candidates: int = 100):
         name = meta.get("name", "")
 
         if not meta.get("data_url"):
-            stats.record(str(uci_id), "uci", name, [
-                RuleResult(rule="a4", passed=False, reason="no data URL")
-            ])
             continue
 
         n = meta.get("num_instances") or 0
@@ -129,10 +125,7 @@ def list_candidates(max_candidates: int = 100):
         licence = meta.get("license") or "CC By 4.0"
 
         if n < MIN_ROWS or p < MIN_FEATURES or p > MAX_FEATURES:
-            stats.record(str(uci_id), "uci", name, [
-                RuleResult(rule="a4", passed=False, reason=f"N={n} < {MIN_ROWS} or P={p} < {MIN_FEATURES} or P={p} > {MAX_FEATURES}")
-            ])
-            continue
+            continue  # dimension pre-filter, not tracked
 
         results = hard_rules.run_metadata_checks(
             n_samples=n,

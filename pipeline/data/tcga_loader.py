@@ -204,11 +204,14 @@ def check_group(project_id, cancer_type, n_cases, primary_site, grp):
     acc = grp["access"]
     sample_types = grp["sample_types"]
 
-    # A5: open access only
+    cand_id = f"{project_id}_{dt.replace(' ', '-')}"
+    cand_name = f"{cancer_type} - {dt}"
+
+    # A5: open access only (source pre-filter, not tracked)
     if acc != "open":
         return None
 
-    # A1: only accepted workflows
+    # A1: only accepted workflows (source pre-filter, not tracked)
     accepted = ACCEPTED_WORKFLOWS.get(dt, [])
     if accepted and wft not in accepted:
         return None
@@ -238,12 +241,13 @@ def check_group(project_id, cancer_type, n_cases, primary_site, grp):
     )
 
     if not hard_rules.all_passed(results):
+        stats.record(cand_id, "tcga", cand_name, results, "biomedical")
         return None
 
     return CandidateInfo(
-        id=f"{project_id}_{dt.replace(' ', '-')}",
+        id=cand_id,
         source="tcga",
-        name=f"{cancer_type} - {dt}",
+        name=cand_name,
         n_samples=n_cases,
         n_features=p_count,
         task_type=task_type,

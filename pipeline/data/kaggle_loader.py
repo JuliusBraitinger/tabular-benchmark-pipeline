@@ -34,7 +34,6 @@ from pipeline.config import (
 )
 from pipeline.data.base import CandidateInfo, Dataset, infer_domain
 from pipeline.hard_rules import runner as hard_rules
-from pipeline.hard_rules.base import RuleResult
 
 from kaggle.api.kaggle_api_extended import KaggleApi  # noqa: E402
 
@@ -211,31 +210,19 @@ def list_candidates(max_candidates: int = 100):
             field_names = fetch_croissant_fields(id, auth=(username, key))
             if not field_names:
                 logger.info("    rejected: no croissant schema")
-                stats.record(id, "kaggle", title, [
-                    RuleResult(rule="a4", passed=False, reason="no croissant schema")
-                ])
                 continue
 
             n_features = len(field_names)
             if n_features < MIN_FEATURES:
                 logger.info("    rejected: P=%d < %d", n_features, MIN_FEATURES)
-                stats.record(id, "kaggle", title, [
-                    RuleResult(rule="a4", passed=False, reason=f"P={n_features} < {MIN_FEATURES}")
-                ])
                 continue
             if n_features > MAX_FEATURES:
                 logger.info("    rejected: P=%d > %d (RAM cap)", n_features, MAX_FEATURES)
-                stats.record(id, "kaggle", title, [
-                    RuleResult(rule="a4", passed=False, reason=f"P={n_features} > {MAX_FEATURES} (RAM cap)")
-                ])
                 continue
 
             is_tabular, reason = looks_tabular(field_names, title)
             if not is_tabular:
                 logger.info("    rejected: not tabular - %s", reason)
-                stats.record(id, "kaggle", title, [
-                    RuleResult(rule="a2", passed=False, reason=f"non-tabular: {reason}")
-                ])
                 continue
 
             meta_results = hard_rules.run_metadata_checks(
