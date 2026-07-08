@@ -369,7 +369,7 @@ def fetch(candidate):
     # expensive data-level hard rules (A4 skipped: TCGA exempt from size filter)
     result, data_results = hard_rules.run_hard_rules(X, y, candidate, skip=("A4",))
     if result is None:
-        return None, []
+        return None, data_results
 
     _, resolved_task = result
 

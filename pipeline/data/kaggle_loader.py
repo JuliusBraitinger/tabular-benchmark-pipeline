@@ -108,7 +108,7 @@ def fetch(candidate: CandidateInfo):
     # Step 3: run hard rules
     result, data_results = hard_rules.run_hard_rules(X, y, candidate)
     if result is None:
-        return None, []
+        return None, data_results
 
     _, task_type = result
 

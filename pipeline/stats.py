@@ -20,10 +20,12 @@ def record(dataset_id, source, name, rule_results, domain=None):
     }
     # fill in pass/fail for each rule we got a result for
     for r in rule_results:
-        row[r.rule] = "pass" if r.passed else "fail: " + r.reason
+        row[r.rule.upper()] = "pass" if r.passed else "fail: " + r.reason
 
-    # did everything pass?
-    row["status"] = "accepted" if all(r.passed for r in rule_results) else "rejected"
+    if not rule_results:
+        row["status"] = "error"
+    else:
+        row["status"] = "accepted" if all(r.passed for r in rule_results) else "rejected"
     _rows.append(row)
 
 

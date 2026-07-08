@@ -358,21 +358,25 @@ def list_candidates(max_candidates=50):
                 # if we couldn't figure out a task type, skip
                 if meta["task_type"] == "unknown":
                     logger.debug("  %s: no tumor/normal contrast, skipping", accession)
-                    fail = RuleResult(rule="pre-filter", passed=False, reason="no tumor/normal contrast")
+                    stats.record(accession, "geo_array", title, [
+                        RuleResult(rule="A1", passed=False, reason="no tumor/normal contrast")
+                    ], "biological")
                     continue
 
                 # feature count check (if we have it)
                 n_features = meta["n_features"]
                 if n_features is not None and n_features < MIN_FEATURES:
                     logger.debug("  %s: P=%d < %d, skipping", accession, n_features, MIN_FEATURES)
-                    reason = "P=" + str(n_features) + " < " + str(MIN_FEATURES)
-                    fail = RuleResult(rule="pre-filter", passed=False, reason=reason)
+                    stats.record(accession, "geo_array", title, [
+                        RuleResult(rule="A4", passed=False, reason=f"P={n_features} < {MIN_FEATURES}")
+                    ], "biological")
                     continue
                 if n_features is not None and n_features > MAX_FEATURES:
                     logger.debug("  %s: P=%d > %d, skipping (won't fit in RAM)",
                                  accession, n_features, MAX_FEATURES)
-                    reason = "P=" + str(n_features) + " > " + str(MAX_FEATURES) + " (RAM cap)"
-                    fail = RuleResult(rule="pre-filter", passed=False, reason=reason)
+                    stats.record(accession, "geo_array", title, [
+                        RuleResult(rule="A4", passed=False, reason=f"P={n_features} > {MAX_FEATURES} (RAM cap)")
+                    ], "biological")
                     continue
 
                 # run the central metadata hard rules
@@ -578,7 +582,7 @@ def fetch(candidate):
 
     result, data_results = hard_rules.run_hard_rules(X, y, candidate)
     if result is None:
-        return None, []
+        return None, data_results
 
     _, task_type = result
 

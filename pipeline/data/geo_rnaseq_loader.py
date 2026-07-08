@@ -122,7 +122,7 @@ def fetch(candidate):
         skip=("A4",),  # RNA-seq is sample-poor; size filter excluded for this source
     )
     if not hard_rules.all_passed(results):
-        return None, []
+        return None, results
 
     return Dataset(
         id=f"GEO-{accessionId}",
