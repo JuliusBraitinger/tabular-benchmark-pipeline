@@ -71,7 +71,7 @@ def main() -> None:
     # separate call because its scrape is slow (a Series Matrix download per study).
     candidates = registry.list_candidates(
         sources=["chembl", "geo_array", "tcga", "geo_rnaseq", "metagenomics", "openml", "uci", "local"],
-        max_per_source=40,
+        max_per_source=120,
     )
     log.info("Got %d candidates", len(candidates))
 
