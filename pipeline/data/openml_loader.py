@@ -65,10 +65,16 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
     all_ds = openml.datasets.list_datasets(output_format="dataframe")
     logger.info("OpenML: %d total", len(all_ds))
 
+    # reach the wide datasets instead of only the first few hundred by id
+    wide = all_ds[
+        (all_ds["NumberOfInstances"] >= MIN_ROWS)
+        & (all_ds["NumberOfFeatures"] >= MIN_FEATURES)
+    ]
+    logger.info("OpenML: %d with N>=%d, P>=%d", len(wide), MIN_ROWS, MIN_FEATURES)
+
     candidates: list[CandidateInfo] = []
 
-    # Step 2: loop through ALL datasets and record pre-filter rejections
-    for _, row in all_ds.head(max_candidates * 3).iterrows():  # check more to account for rejections
+    for _, row in wide.head(max_candidates * 3).iterrows():  # check more to account for rejections
         did = int(row["did"])
         name = str(row.get("name", ""))
         n_samples = int(row.get("NumberOfInstances", 0))
@@ -77,9 +83,7 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
         fmt = str(row.get("format", "")).lower()
         domain = get_openml_domain(did)
 
-        # cheap pre-filters (not tracked): too small, or a format pandas can't load
-        if n_features < MIN_FEATURES or n_samples < MIN_ROWS:
-            continue
+        # already size-filtered above; just skip the format pandas can't load
         if fmt == "sparse_arff":
             continue
 

@@ -30,6 +30,10 @@ OUTPUT_DIR = Path(os.environ.get("PIPELINE_DATA", "data")) / "datasets"
 RESULTS_DIR = Path(os.environ.get("PIPELINE_DATA", "."))
 MAX_SAVED_DATASETS = 120  
 
+# fingerprint sources: 0/1 rows collapse A6's sorted-row hash to popcount, so
+# everything looks like a duplicate. Skip A6 for them; S1 carries the similarity signal.
+A6_EXEMPT_SOURCES = {"chembl"}  
+
 def _save_dataset(ds: Dataset, output_dir: Path) -> Path:
     """Persist a Dataset to {output_dir}/{ds.id}/ as parquet + pickle."""
     ds_dir = output_dir / ds.id
@@ -68,7 +72,7 @@ def main() -> None:
     # Phase 1: scrape candidates (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
     candidates = registry.list_candidates(
-        sources=["chembl", "geo_array", "tcga", "geo_rnaseq", "metagenomics", "openml", "uci", "local"],
+        sources=["chembl", "geo_array", "tcga", "geo_rnaseq", "metagenomics", "openml", "uci"],
         max_per_source=90,
     )
     log.info("Got %d candidates", len(candidates))
@@ -98,17 +102,20 @@ def main() -> None:
             stats.record(candidate.id, candidate.source, candidate.name, data_results, candidate.domain)
             continue
 
-        a6_result = a6_cross_duplicate.check(ds, a6_pool)
-        stats.record(candidate.id, candidate.source, candidate.name, data_results + [a6_result], candidate.domain)
-        if not a6_result.passed:
-            log.info("  A6 rejected %s: %s", ds.id, a6_result.reason)
-            del ds
-            continue
+        if candidate.source in A6_EXEMPT_SOURCES:
+            stats.record(candidate.id, candidate.source, candidate.name, data_results, candidate.domain)
+        else:
+            a6_result = a6_cross_duplicate.check(ds, a6_pool)
+            stats.record(candidate.id, candidate.source, candidate.name, data_results + [a6_result], candidate.domain)
+            if not a6_result.passed:
+                log.info("  A6 rejected %s: %s", ds.id, a6_result.reason)
+                del ds
+                continue
+            a6_pool.append((ds.id, a6_cross_duplicate.hash_sorted_rows(ds)))
 
         ds_dir = _save_dataset(ds, OUTPUT_DIR)
         log.info("  saved %s: X=%s task=%s", ds.id, ds.X.shape, ds.task_type)
         saved_dirs.append(ds_dir)
-        a6_pool.append((ds.id, a6_cross_duplicate.hash_sorted_rows(ds)))
         del ds  # release memory before fetching the next candidate
 
         if len(saved_dirs) >= MAX_SAVED_DATASETS:
