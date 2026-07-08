@@ -35,6 +35,20 @@ fp_generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=FP_N_B
 MIN_BIOACTIVITIES = 2000
 
 
+def get_json(url, retries=3):
+    # ChEMBL occasionally serves an HTML error page under load; retry instead of
+    # letting one bad response kill the whole source.
+    for attempt in range(retries):
+        try:
+            r = requests.get(url, timeout=30)
+            r.raise_for_status()
+            return r.json()
+        except (requests.RequestException, ValueError) as e:
+            logger.warning("chembl request failed (%d/%d): %s -- %s", attempt + 1, retries, e, url)
+            time.sleep(config.REQUEST_DELAY * (attempt + 1))
+    raise RuntimeError(f"chembl: giving up on {url} after {retries} tries")
+
+
 def list_candidates(max_candidates=50):
     candidates = []
     offset = 0
@@ -46,7 +60,7 @@ def list_candidates(max_candidates=50):
             f"?target_type=SINGLE+PROTEIN&organism=Homo+sapiens"
             f"&limit=50&offset={offset}"
         )
-        targets = requests.get(url, timeout=30).json().get("targets", [])
+        targets = get_json(url).get("targets", [])
         if not targets:
             break  # ran out of targets
 
@@ -61,7 +75,7 @@ def list_candidates(max_candidates=50):
                 f"{CHEMBL_BASE_URL}/activity.json"
                 f"?target_chembl_id={target_id}&pchembl_value__isnull=false&limit=1"
             )
-            count = requests.get(count_url, timeout=30).json()["page_meta"]["total_count"]
+            count = get_json(count_url)["page_meta"]["total_count"]
             if count < MIN_BIOACTIVITIES:
                 continue
 
@@ -100,7 +114,7 @@ def fetch(candidate):
         f"?target_chembl_id={target_id}&pchembl_value__isnull=false&limit=1000"
     )
     while url:
-        data = requests.get(url, timeout=30).json()
+        data = get_json(url)
         for activity in data["activities"]:
             smiles = activity.get("canonical_smiles")
             value = activity.get("pchembl_value")
