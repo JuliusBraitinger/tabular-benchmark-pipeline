@@ -28,7 +28,8 @@ from pipeline.soft_rules import s6_class_balance as s6
 OUTPUT_DIR = Path(os.environ.get("PIPELINE_DATA", "data")) / "datasets"
 # rule_stats/soft_stats/sankey land here: under PIPELINE_DATA on the cluster, cwd locally
 RESULTS_DIR = Path(os.environ.get("PIPELINE_DATA", "."))
-MAX_SAVED_DATASETS = 120  
+MAX_SAVED_DATASETS = 120
+MAX_PER_SOURCE_SAVED = 20  # cap saved datasets per source for a balanced benchmark  
 
 # fingerprint sources: 0/1 rows collapse A6's sorted-row hash to popcount, so
 # everything looks like a duplicate. Skip A6 for them; S1 carries the similarity signal.
@@ -90,8 +91,11 @@ def main() -> None:
     log.info("=== Phase 2: fetching + saving datasets ===")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     saved_dirs: list[Path] = []
+    saved_per_source: dict[str, int] = {}
     a6_pool: list[tuple[str, set]] = []  # (id, row-hash set) for cross-dataset duplicate check
     for i, candidate in enumerate(candidates, 1):
+        if saved_per_source.get(candidate.source, 0) >= MAX_PER_SOURCE_SAVED:
+            continue  # per-source quota reached, skip without fetching
         log.info("[%d/%d] fetching %s", i, len(candidates), candidate.id)
         try:
             ds, data_results = registry.fetch(candidate)
@@ -116,6 +120,7 @@ def main() -> None:
         ds_dir = _save_dataset(ds, OUTPUT_DIR)
         log.info("  saved %s: X=%s task=%s", ds.id, ds.X.shape, ds.task_type)
         saved_dirs.append(ds_dir)
+        saved_per_source[candidate.source] = saved_per_source.get(candidate.source, 0) + 1
         del ds  # release memory before fetching the next candidate
 
         if len(saved_dirs) >= MAX_SAVED_DATASETS:
