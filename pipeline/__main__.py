@@ -7,6 +7,7 @@ import logging
 import os
 import pickle
 import time
+from itertools import zip_longest
 from pathlib import Path
 
 import pandas as pd
@@ -27,8 +28,7 @@ from pipeline.soft_rules import s6_class_balance as s6
 OUTPUT_DIR = Path(os.environ.get("PIPELINE_DATA", "data")) / "datasets"
 # rule_stats/soft_stats/sankey land here: under PIPELINE_DATA on the cluster, cwd locally
 RESULTS_DIR = Path(os.environ.get("PIPELINE_DATA", "."))
-MAX_SAVED_DATASETS = 120  # safety ceiling above the ~80-100 target (per-source caps do the balancing)
-
+MAX_SAVED_DATASETS = 120  
 
 def _save_dataset(ds: Dataset, output_dir: Path) -> Path:
     """Persist a Dataset to {output_dir}/{ds.id}/ as parquet + pickle."""
@@ -67,13 +67,18 @@ def main() -> None:
 
     # Phase 1: scrape candidates (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
-    # full run: fast sources at 40 candidates each; geo_array capped lower in a
-    # separate call because its scrape is slow (a Series Matrix download per study).
     candidates = registry.list_candidates(
         sources=["chembl", "geo_array", "tcga", "geo_rnaseq", "metagenomics", "openml", "uci", "local"],
-        max_per_source=120,
+        max_per_source=90,
     )
     log.info("Got %d candidates", len(candidates))
+
+    # interleave sources round-robin so the total cap spreads evenly instead of
+    # the first sources in the list eating the whole budget.
+    by_source: dict[str, list] = {}
+    for c in candidates:
+        by_source.setdefault(c.source, []).append(c)
+    candidates = [c for group in zip_longest(*by_source.values()) for c in group if c]
 
     # Phase 2: fetch each dataset, save to disk, then drop from memory.
     # Streaming save keeps RAM bounded to one dataset at a time and means a
