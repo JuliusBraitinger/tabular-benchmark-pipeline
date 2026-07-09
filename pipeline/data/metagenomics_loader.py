@@ -118,6 +118,6 @@ def fetch(candidate):
         X=X,
         y=y,
         task_type="classification",
-        metadata={"licence": "cc-by-4.0", "disease": target},
+        metadata={"licence": "cc-by-4.0", "disease": target, "url": candidate.url},
         domain="biological",
     ), results

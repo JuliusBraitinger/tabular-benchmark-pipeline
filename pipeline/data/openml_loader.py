@@ -65,12 +65,15 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
     all_ds = openml.datasets.list_datasets(output_format="dataframe")
     logger.info("OpenML: %d total", len(all_ds))
 
-    # reach the wide datasets instead of only the first few hundred by id
+    # reach the wide datasets instead of only the first few hundred by id, and drop
+    # sparse_arff up front (pandas-2 can't load it) so the scan window isn't wasted
+    # on datasets we'd only skip anyway
     wide = all_ds[
         (all_ds["NumberOfInstances"] >= MIN_ROWS)
         & (all_ds["NumberOfFeatures"] >= MIN_FEATURES)
+        & (all_ds["format"].astype(str).str.lower() != "sparse_arff")
     ]
-    logger.info("OpenML: %d with N>=%d, P>=%d", len(wide), MIN_ROWS, MIN_FEATURES)
+    logger.info("OpenML: %d loadable with N>=%d, P>=%d", len(wide), MIN_ROWS, MIN_FEATURES)
 
     candidates: list[CandidateInfo] = []
 
@@ -80,12 +83,7 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
         n_samples = int(row.get("NumberOfInstances", 0))
         n_features = int(row.get("NumberOfFeatures", 0))
         licence = str(row.get("licence", "") or "")
-        fmt = str(row.get("format", "")).lower()
         domain = get_openml_domain(did)
-
-        # already size-filtered above; just skip the format pandas can't load
-        if fmt == "sparse_arff":
-            continue
 
         # ask OpenML what kind of task this dataset is for (classification/regression)
         task_type = _fetch_task_type(did)

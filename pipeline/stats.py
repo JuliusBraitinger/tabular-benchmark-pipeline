@@ -1,4 +1,5 @@
 # collects rule results for every candidate so we can export a summary csv later
+#TODO links to datasets in report html, original ids for datasets 
 import pandas as pd
 import plotly.graph_objects as go
 
@@ -11,12 +12,13 @@ RULE_NAME = {"A1": "task type", "A2": "synthetic", "A3": "signal",
 
 
 
-def record(dataset_id, source, name, rule_results, domain=None):
+def record(dataset_id, source, name, rule_results, domain=None, url=""):
     row = {
         "dataset_id": dataset_id,
         "source": source,
         "name": name,
         "domain": domain,
+        "url": url,
     }
     # fill in pass/fail for each rule we got a result for
     for r in rule_results:

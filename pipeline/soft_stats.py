@@ -8,6 +8,7 @@ def record (dataset, soft_results):
         "dataset_id": dataset.id,
         "source": dataset.source,
         "name": dataset.name,
+        "url": dataset.metadata.get("url", ""),
         "n_rows": dataset.X.shape[0],
         "n_features": dataset.X.shape[1],
     }

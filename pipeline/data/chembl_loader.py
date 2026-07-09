@@ -161,6 +161,6 @@ def fetch(candidate):
         id=candidate.id,
         source="chembl",
         name=candidate.name,
-        metadata=candidate.metadata,
+        metadata={**candidate.metadata, "url": candidate.url},
         domain="chemical",
     ), data_results

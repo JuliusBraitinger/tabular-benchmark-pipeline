@@ -77,6 +77,7 @@ def evaluate_dataset(ds):
              "max_error": skm.max_error(yt, yp)}
 
     return dict(id=ds.id, source=ds.source, name=ds.name, task=ds.task_type,
+                url=ds.metadata.get("url", ""),
                 n=len(X), p=X.shape[1], metrics=m, yt=yt, yp=yp, proba=proba, labels=labels)
 
 
@@ -184,10 +185,11 @@ def build_html(ev):
     rows = "".join("<tr><td>%s</td><td>%s</td></tr>" % (k, "n/a" if v is None else format(v, ".4f"))
                    for k, v in ev["metrics"].items())
     tips = "".join("<li>%s</li>" % t for t in insights(ev))
+    idlink = f"<a href='{ev['url']}'>{ev['id']}</a>" if ev.get("url") else ev["id"]
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>{ev['id']}</title>
 <style>body{{font-family:system-ui,sans-serif;margin:2rem}}table{{border-collapse:collapse}}
 td,th{{border:1px solid #ddd;padding:4px 10px}}</style></head><body>
-<h1>{ev['name']}</h1><p>{ev['id']} - {ev['source']} - {ev['task']} - N={ev['n']} x P={ev['p']}</p>
+<h1>{ev['name']}</h1><p>{idlink} - {ev['source']} - {ev['task']} - N={ev['n']} x P={ev['p']}</p>
 <h2>Insights</h2><ul>{tips}</ul>
 <h2>Metrics ({CV_FOLDS}-fold CV)</h2><table><tr><th>metric</th><th>value</th></tr>{rows}</table>
 <h2>Plots</h2>{''.join(figs)}</body></html>"""
@@ -208,7 +210,7 @@ def generate_reports(ds_dirs, load_dataset, results_dir="."):
         except Exception:
             log.exception("  report failed for %s -- skipping (run continues)", ds.id)
             continue
-        rows.append({"id": ev["id"], "source": ev["source"], "task": ev["task"],
+        rows.append({"id": ev["id"], "source": ev["source"], "url": ev["url"], "task": ev["task"],
                      "n": ev["n"], "p": ev["p"], **ev["metrics"]})
     csv = str(Path(results_dir) / "metrics.csv")
     pd.DataFrame(rows).to_csv(csv, index=False)

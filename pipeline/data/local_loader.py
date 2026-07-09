@@ -1,5 +1,6 @@
 # Local loader: load datasets that are stored in data/datasets/{id}/
 #takes csv and parquet files for X and y, and optional meta.pkl for metadata
+#TODO implement that you can choose which metadata column your target will be
 import logging
 import pandas as pd
 from pathlib import Path

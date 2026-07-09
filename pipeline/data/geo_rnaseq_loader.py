@@ -132,7 +132,7 @@ def fetch(candidate):
         X=X,
         y=y,
         task_type=candidate.task_type,
-        metadata={**candidate.metadata, "licence": "public-domain", "transform": "log1p"},
+        metadata={**candidate.metadata, "licence": "public-domain", "transform": "log1p", "url": candidate.url},
         domain="biological",
     ), results
 
