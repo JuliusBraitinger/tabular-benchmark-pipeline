@@ -28,9 +28,14 @@ MIN_CASES = 100                                            # skip diseases with 
 HEALTHY = {"healthy", "control", "no"}  # values counted as healthy
 
 
-def build_dataset(X_file, metadata_file):
-    #TODO implement
-    return X_file, metadata_file
+def build_dataset(X_file=DATA_DIR / "profiles.parquet", metadata_file=DATA_DIR / "metadata.parquet"):
+    profiles = pd.read_parquet(X_file)
+    metadata = pd.read_parquet(metadata_file)
+    shared = profiles.index.intersection(metadata.index)
+    X = profiles.loc[shared]
+    disease = metadata.loc[shared, DISEASE_COL].str.strip().str.lower()
+    disease.name = "disease"
+    return X, disease
 
 def list_candidates(max_candidates=50):
     X, disease = build_dataset()
