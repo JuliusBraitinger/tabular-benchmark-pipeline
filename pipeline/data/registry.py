@@ -28,6 +28,7 @@ _LOADER_MODULES: dict[str, str] = {
     "local": "pipeline.data.local_loader",
     "chembl": "pipeline.data.chembl_loader",
     "metagenomics": "pipeline.data.metagenomics_loader",
+    "cmd": "pipeline.data.cmd_loader",
 }
 
 
