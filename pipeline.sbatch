@@ -17,6 +17,7 @@ export PIPELINE_CACHE="$SCRATCH"        # throwaway download caches (geoparse/ka
 export PIPELINE_DATA="$SCRATCH/data"    # datasets, tcga/uci/openml caches, rule_stats/soft_stats/html
 
 export GEO_RNASEQ_DIR="$HOME/masterthesis/rnaseq_output"   # RNA-seq tar.gz exports from the nf pipeline
+export CMD_DIR="$HOME/masterthesis/cmd_data"               # curatedMetagenomicData parquet (profiles + metadata)
 export TABPFN_MODEL_CACHE_DIR="$HOME/masterthesis/tabpfn_cache"  # pre-warmed v2 weights on /home
 export ENTREZ_EMAIL="julius.braitinger@uni-tuebingen.de"   # NCBI requires an email for Entrez (geo_array)
 # export NCBI_API_KEY="your-key-here"   # optional: uncomment with a real key to lift rate limit 3->10 req/s

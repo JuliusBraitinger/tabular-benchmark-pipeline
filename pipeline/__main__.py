@@ -30,10 +30,7 @@ OUTPUT_DIR = Path(os.environ.get("PIPELINE_DATA", "data")) / "datasets"
 RESULTS_DIR = Path(os.environ.get("PIPELINE_DATA", "."))
 MAX_SAVED_DATASETS = 120
 MAX_PER_SOURCE_SAVED = 20  # cap saved datasets per source for a balanced benchmark  
-
-# fingerprint sources: 0/1 rows collapse A6's sorted-row hash to popcount, so
-# everything looks like a duplicate. Skip A6 for them; S1 carries the similarity signal.
-A6_EXEMPT_SOURCES = {"chembl"}  
+A6_EXEMPT_SOURCES = {"chembl", "cmd"}
 
 def _save_dataset(ds: Dataset, output_dir: Path) -> Path:
     """Persist a Dataset to {output_dir}/{ds.id}/ as parquet + pickle."""
@@ -72,10 +69,10 @@ def main() -> None:
 
     # Phase 1: scrape candidates (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
-    candidates = registry.list_candidates(
-        sources=["chembl", "geo_array", "tcga", "geo_rnaseq", "metagenomics", "openml", "uci"],
-        max_per_source=90,
-    )
+    default_sources = ["chembl", "geo_array", "tcga", "geo_rnaseq", "metagenomics", "cmd", "openml", "uci"]
+    env_sources = os.environ.get("PIPELINE_SOURCES")  # e.g. PIPELINE_SOURCES=cmd to run one source
+    sources = env_sources.split(",") if env_sources else default_sources
+    candidates = registry.list_candidates(sources=sources, max_per_source=90)
     log.info("Got %d candidates", len(candidates))
 
     # interleave sources round-robin so the total cap spreads evenly instead of

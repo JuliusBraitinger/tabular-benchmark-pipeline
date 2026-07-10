@@ -1,6 +1,7 @@
 name: tcml
 channels:
   - conda-forge
+  - bioconda
 dependencies:
   - python=3.11
   - numpy>=1.24
@@ -8,6 +9,8 @@ dependencies:
   - scikit-learn>=1.3
   - requests>=2.31
   - plotly>=5.0
+  - bioconductor-curatedmetagenomicdata  # microbiome datasets (R); see scripts/export_cmd.R
+  - r-dplyr                               # used by scripts/export_cmd.R
   - pip
   - pip:
       - openml>=0.14
