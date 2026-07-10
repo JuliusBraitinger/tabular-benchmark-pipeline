@@ -1,6 +1,7 @@
 # Microbiome loader — human gut taxonomic profiles from curatedMetagenomicData
 # (Bioconductor, Waldron/Segata). One dataset PER disease:
-#   rows     = gut samples: healthy controls + one disease's patients
+#   rows     = gut samples: one disease's patients + healthy controls FROM THE SAME STUDIES
+#              (matched controls remove cross-study batch effects that swamp the disease signal)
 #   features = MetaPhlAn relative-abundance taxa
 #   target   = healthy vs <disease>  ->  binary classification
 #
@@ -29,6 +30,8 @@ HEALTHY = {"control"}  # curatedMetagenomicData healthy label
 SKIP_LABELS = {"fmt"}  # study_condition values that aren't diseases (interventions etc.)
 MAX_CONTROL_RATIO = 3  # cap controls at this multiple of cases, else the pooled set is ~95% healthy
 SEED = 0               # deterministic control subsampling: list_candidates count == fetch data
+STUDY_COL = "study_name"  # curatedMetagenomicData study id — controls are matched within these
+MIN_CONTROLS = 100        # need enough within-study controls to form a valid healthy contrast
 
 
 def build_dataset(X_file=DATA_DIR / "profiles.parquet", metadata_file=DATA_DIR / "metadata.parquet"):
@@ -39,17 +42,23 @@ def build_dataset(X_file=DATA_DIR / "profiles.parquet", metadata_file=DATA_DIR /
     X = profiles.loc[shared]
     disease = metadata.loc[shared, DISEASE_COL].str.strip().str.lower()
     disease.name = "disease"
-    return X, disease
+    study = metadata.loc[shared, STUDY_COL]  # for matching controls to a disease's own studies
+    study.name = "study"
+    return X, disease, study
 
 def list_candidates(max_candidates=50):
-    X, disease = build_dataset()
-    n_controls = int(disease.isin(HEALTHY).sum())
+    X, disease, study = build_dataset()
+    is_control = disease.isin(HEALTHY)
 
     candidates = []
     for label, n_cases in disease.value_counts().items():
         if label in HEALTHY or label in SKIP_LABELS or n_cases < MIN_CASES:
             continue
-        kept_controls = min(n_controls, MAX_CONTROL_RATIO * n_cases)       # cap controls per disease
+        studies = study[disease == label].unique()          # studies that contain this disease
+        n_matched = int((is_control & study.isin(studies)).sum())  # controls from those studies
+        if n_matched < MIN_CONTROLS:
+            continue  # too few within-study controls to form an honest contrast
+        kept_controls = min(n_matched, MAX_CONTROL_RATIO * n_cases)        # cap controls per disease
         n_rows = int(n_cases + kept_controls)
         results = hard_rules.run_metadata_checks(
             n_samples=n_rows, n_features=X.shape[1], task_type="classification",
@@ -78,11 +87,12 @@ def list_candidates(max_candidates=50):
     return candidates
 
 def fetch(candidate):
-    X, disease = build_dataset()
+    X, disease, study = build_dataset()
     target = candidate.metadata["disease"]
 
+    studies = study[disease == target].unique()             # studies that contain this disease
     case_ids = disease.index[disease == target]
-    control_ids = disease.index[disease.isin(HEALTHY)]
+    control_ids = disease.index[disease.isin(HEALTHY) & study.isin(studies)]  # matched controls
     n_keep = min(len(control_ids), MAX_CONTROL_RATIO * len(case_ids))      # cap controls per disease
     control_ids = control_ids.to_series().sample(n=n_keep, random_state=SEED).index
 
