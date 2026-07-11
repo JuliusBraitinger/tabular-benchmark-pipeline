@@ -1,106 +1,128 @@
-# Microbiome loader — human gut taxonomic profiles from curatedMetagenomicData
-# (Bioconductor, Waldron/Segata). One dataset PER disease:
-#   rows     = gut samples: one disease's patients + healthy controls FROM THE SAME STUDIES
-#              (matched controls remove cross-study batch effects that swamp the disease signal)
-#   features = MetaPhlAn relative-abundance taxa
-#   target   = healthy vs <disease>  ->  binary classification
+# curatedMetagenomicData loader — turns the gut-microbiome parquet (staged by
+# scripts/export_cmd.R + scripts/cmd_prep.py into CMD_DIR) into ML datasets.
+#   profiles.parquet = samples x taxa (the features)
+#   metadata.parquet = curated fields (study_condition, study_name, age, BMI, ...)
 #
-# No live API: the data is staged offline once (scripts/export_cmd.R -> scripts/cmd_prep.py)
-# into CMD_DIR as two tables that share a sample_id index:
-#   profiles.parquet  rows=samples, cols=taxa
-#   metadata.parquet  rows=samples, cols=curated fields (incl. study_condition)
+#   classification — healthy vs one disease. Controls come from the disease's OWN studies
+#                    (removes cross-study batch effects) and are balanced 1:1 with the cases
+#                    (so the A3 signal test isn't fooled by the bigger class).
+#   regression     — predict a continuous trait (age, BMI, a lab value)
 
-import logging
 import os
 from pathlib import Path
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from pipeline.data.base import CandidateInfo, Dataset
 from pipeline import stats
 from pipeline.hard_rules import runner as hard_rules
 
-logger = logging.getLogger(__name__)
-
 DATA_DIR = Path(os.environ.get("CMD_DIR", "data/cmd"))
-DISEASE_COL = "study_condition"                            # curatedMetagenomicData condition column
-MIN_CASES = 100                                            # skip diseases with too few patients
-HEALTHY = {"control"}  # curatedMetagenomicData healthy label
-SKIP_LABELS = {"fmt"}  # study_condition values that aren't diseases (interventions etc.)
-MAX_CONTROL_RATIO = 3  # cap controls at this multiple of cases, else the pooled set is ~95% healthy
-SEED = 0               # deterministic control subsampling: list_candidates count == fetch data
-STUDY_COL = "study_name"  # curatedMetagenomicData study id — controls are matched within these
-MIN_CONTROLS = 100        # need enough within-study controls to form a valid healthy contrast
+URL = "https://waldronlab.io/curatedMetagenomicData/"
+
+# classification (one dataset per disease)
+DISEASE_COL = "study_condition"
+STUDY_COL = "study_name"
+HEALTHY = {"control"}
+SKIP_LABELS = {"fmt"}      # a value that isn't a disease
+MIN_CASES = 50
+MIN_CONTROLS = 50
+SEED = 0
+
+# regression (one dataset per continuous trait)
+TARGETS = ["age", "BMI", "hba1c", "ldl", "hdl", "cholesterol", "triglycerides",
+           "hscrp", "creatinine", "systolic_p", "dyastolic_p", "albumine",
+           "gestational_age", "birth_weight"]
 
 
-def build_dataset(X_file=DATA_DIR / "profiles.parquet", metadata_file=DATA_DIR / "metadata.parquet"):
-    profiles = pd.read_parquet(X_file)
-    metadata = pd.read_parquet(metadata_file)
-    metadata = metadata[~metadata.index.duplicated(keep="first")]  # sample_id isn't globally unique
-    shared = profiles.index.intersection(metadata.index)
-    X = profiles.loc[shared]
-    disease = metadata.loc[shared, DISEASE_COL].str.strip().str.lower()
-    disease.name = "disease"
-    study = metadata.loc[shared, STUDY_COL]  # for matching controls to a disease's own studies
-    study.name = "study"
-    return X, disease, study
+def build_dataset():
+    # load both tables and keep only samples that appear in both
+    X = pd.read_parquet(DATA_DIR / "profiles.parquet")
+    meta = pd.read_parquet(DATA_DIR / "metadata.parquet")
+    meta = meta[~meta.index.duplicated(keep="first")]   # sample_id isn't globally unique
+    shared = X.index.intersection(meta.index)
+    return X.loc[shared], meta.loc[shared]
+
 
 def list_candidates(max_candidates=50):
-    X, disease, study = build_dataset()
-    is_control = disease.isin(HEALTHY)
-
+    X, meta = build_dataset()
+    P = X.shape[1]
+    disease = meta[DISEASE_COL].str.strip().str.lower()
+    study = meta[STUDY_COL]
     candidates = []
+
+    # classification: healthy vs each disease
     for label, n_cases in disease.value_counts().items():
         if label in HEALTHY or label in SKIP_LABELS or n_cases < MIN_CASES:
             continue
-        studies = study[disease == label].unique()          # studies that contain this disease
-        n_matched = int((is_control & study.isin(studies)).sum())  # controls from those studies
-        if n_matched < MIN_CONTROLS:
-            continue  # too few within-study controls to form an honest contrast
-        kept_controls = min(n_matched, MAX_CONTROL_RATIO * n_cases)        # cap controls per disease
-        n_rows = int(n_cases + kept_controls)
-        results = hard_rules.run_metadata_checks(
-            n_samples=n_rows, n_features=X.shape[1], task_type="classification",
-            licence="odbl-1.0", source="cmd", name=label
-        )
-        if not hard_rules.all_passed(results):
-            stats.record(f"cmd-{label}", "cmd",
-                         f"curatedMetagenomicData gut (healthy vs {label})", results, "biological")
+        studies = study[disease == label].unique()
+        n_controls = int((disease.isin(HEALTHY) & study.isin(studies)).sum())
+        if n_controls < MIN_CONTROLS:
             continue
-
+        n_rows = 2 * min(n_cases, n_controls)   # balanced 1:1
+        name = f"curatedMetagenomicData (healthy vs {label})"
+        results = hard_rules.run_metadata_checks(
+            n_samples=n_rows, n_features=P, task_type="classification",
+            licence="odbl-1.0", source="cmd", name=label)
+        if not hard_rules.all_passed(results):
+            stats.record(f"cmd-{label}", "cmd", name, results, "biological")
+            continue
         candidates.append(CandidateInfo(
-            id=f"cmd-{label}",
-            source="cmd",
-            name=f"curatedMetagenomicData (healthy vs {label})",
-            n_samples=n_rows,
-            n_features=X.shape[1],
-            task_type="classification",
-            licence="odbl-1.0",
-            url="https://waldronlab.io/curatedMetagenomicData/",
-            metadata={"disease": label},
-            domain="biological",
-        ))
-        if len(candidates) >= max_candidates:
-            break
+            id=f"cmd-{label}", source="cmd", name=name, n_samples=n_rows, n_features=P,
+            task_type="classification", licence="odbl-1.0", url=URL,
+            metadata={"disease": label}, domain="biological"))
 
-    return candidates
+    # regression: predict each continuous trait from the taxa
+    for col in TARGETS:
+        if col not in meta.columns:
+            continue
+        y = meta[col].dropna()
+        name = f"curatedMetagenomicData (predict {col})"
+        results = hard_rules.run_metadata_checks(
+            n_samples=len(y), n_features=P, task_type="regression",
+            licence="odbl-1.0", source="cmd", name=col)
+        if not hard_rules.all_passed(results):
+            stats.record(f"cmd_reg-{col}", "cmd", name, results, "biological")
+            continue
+        candidates.append(CandidateInfo(
+            id=f"cmd_reg-{col}", source="cmd", name=name, n_samples=len(y), n_features=P,
+            task_type="regression", licence="odbl-1.0", url=URL,
+            metadata={"target": col}, domain="biological"))
+
+    return candidates[:max_candidates]
+
 
 def fetch(candidate):
-    X, disease, study = build_dataset()
-    target = candidate.metadata["disease"]
+    X, meta = build_dataset()
 
-    studies = study[disease == target].unique()             # studies that contain this disease
-    case_ids = disease.index[disease == target]
-    control_ids = disease.index[disease.isin(HEALTHY) & study.isin(studies)]  # matched controls
-    n_keep = min(len(control_ids), MAX_CONTROL_RATIO * len(case_ids))      # cap controls per disease
-    control_ids = control_ids.to_series().sample(n=n_keep, random_state=SEED).index
+    if "target" in candidate.metadata:
+        # regression: every sample that has a value, predict it from the taxa
+        col = candidate.metadata["target"]
+        y = meta[col].dropna()
+        rows = X.index.intersection(y.index)
+        y = y.loc[rows].astype(float)
+        task = "regression"
+    else:
+        # classification: this disease's cases + within-study controls, balanced 1:1
+        label = candidate.metadata["disease"]
+        disease = meta[DISEASE_COL].str.strip().str.lower()
+        study = meta[STUDY_COL]
+        studies = study[disease == label].unique()
+        cases = disease.index[disease == label]
+        controls = disease.index[disease.isin(HEALTHY) & study.isin(studies)]
+        n = min(len(cases), len(controls))
+        cases = cases.to_series().sample(n=n, random_state=SEED).index
+        controls = controls.to_series().sample(n=n, random_state=SEED).index
+        rows = cases.append(controls)
+        y = pd.Series(["healthy"] * n + ["disease"] * n, index=rows)
+        task = "classification"
 
-    X = pd.concat([X.loc[case_ids], X.loc[control_ids]])
-    y = pd.Series(["disease"] * len(case_ids) + ["healthy"] * len(control_ids), name="target")
-    X = np.log1p(X).reset_index(drop=True)
+    X = np.log1p(X.loc[rows]).reset_index(drop=True)
+    y = y.reset_index(drop=True)
+    y.name = "target"
 
-    results = hard_rules.run_data_checks(X=X, y=y, task_type="classification")
+    results = hard_rules.run_data_checks(X=X, y=y, task_type=task)
     if not hard_rules.all_passed(results):
         return None, results
 
@@ -110,7 +132,6 @@ def fetch(candidate):
         name=candidate.name,
         X=X,
         y=y,
-        task_type="classification",
-        metadata={"licence": "odbl-1.0", "disease": target, "url": candidate.url},
-        domain="biological",
-    ), results
+        task_type=task,
+        metadata={**candidate.metadata, "licence": "odbl-1.0", "url": candidate.url},
+        domain="biological"), results

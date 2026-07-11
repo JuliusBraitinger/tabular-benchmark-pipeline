@@ -69,7 +69,7 @@ def main() -> None:
 
     # Phase 1: scrape candidates (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
-    default_sources = ["chembl", "geo_array", "tcga", "geo_rnaseq", "metagenomics", "cmd", "openml", "uci"]
+    default_sources = ["cmd"]
     env_sources = os.environ.get("PIPELINE_SOURCES")  # e.g. PIPELINE_SOURCES=cmd to run one source
     sources = env_sources.split(",") if env_sources else default_sources
     candidates = registry.list_candidates(sources=sources, max_per_source=90)
