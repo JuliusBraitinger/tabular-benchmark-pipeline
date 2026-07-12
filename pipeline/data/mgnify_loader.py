@@ -23,20 +23,24 @@ def studies(biome):
         resp.raise_for_status()
         data = resp.json()
         for study in data.get("data", []):
-            acc = study.get("accession")
-            proj = study.get("project")
-            n = study.get("samples")
-            name = study.get("name")
+            a = study["attributes"]
+            acc = a["accession"]
+            proj = a.get("secondary-accession")
+            n = a.get("samples-count")
+            name = a["study-name"]
             yield acc, proj, n, name
-        url = data.get("pagination", {}).get("next")
+        url = data.get("links", {}).get("next")
 
 def has_taxonomy(acc):
-    # check if a study has taxonomy data by simply checking if the taxonomies endpoint returns any data
-    url = f"{API}/studies/{acc}/taxonomies"
+    # a study qualifies only if it has an aggregated taxonomy abundance table
+    url = f"{API}/studies/{acc}/downloads"
     resp = requests.get(url, headers=H, timeout=30)
     resp.raise_for_status()
-    data = resp.json()
-    return bool(data.get("data"))
+    for d in resp.json().get("data", []):
+        alias = d["attributes"]["alias"]
+        if "taxonomy_abundances" in alias and "phylum" not in alias:
+            return True
+    return False
 
 def list_candidates(max_candidates=50):
     candidates = []
