@@ -16,13 +16,27 @@ SKIP_BIOME = "Human:Digestive"   # human gut -> covered by cmd
 
 
 def studies(biome):
-    #TODO implement 
-    return []
+    # fetch all studies for a given biome, yield (accession, project, n_samples, name)
+    url = f"{API}/biomes/{biome}/studies"
+    while url:
+        resp = requests.get(url, headers=H, timeout=3)
+        resp.raise_for_status()
+        data = resp.json()
+        for study in data.get("data", []):
+            acc = study.get("accession")
+            proj = study.get("project")
+            n = study.get("samples")
+            name = study.get("name")
+            yield acc, proj, n, name
+        url = data.get("pagination", {}).get("next")
 
 def has_taxonomy(acc):
-    #TODO implement
-    return False
-
+    # check if a study has taxonomy data by simply checking if the taxonomies endpoint returns any data
+    url = f"{API}/studies/{acc}/taxonomies"
+    resp = requests.get(url, headers=H, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    return bool(data.get("data"))
 
 def list_candidates(max_candidates=50):
     candidates = []
@@ -38,8 +52,8 @@ def list_candidates(max_candidates=50):
                 continue
             candidates.append(CandidateInfo(
                 id=acc, source="mgnify",
-                name=name, n_samples=n,
-                n_features=None,
+                 name=name, n_samples=n,
+                 n_features=None,
                 task_type="classification",
                 licence="public-domain",
                 url=f"https://www.ebi.ac.uk/metagenomics/studies/{acc}",
