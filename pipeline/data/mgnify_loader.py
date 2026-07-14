@@ -20,7 +20,6 @@ MISSING = (None, "")
 
 BIOMES = ["root:Host-associated", "root:Environmental:Aquatic"]
 MIN_SAMPLES = 150
-SKIP_BIOME = "Human:Digestive"   # human gut -> covered by cmd
 MIN_CLASS = 30                   # a target class needs at least this many samples
 MAX_CLASSES = 10                 # skip near-unique fields (coordinates, ids)
 
@@ -43,7 +42,7 @@ def studies(biome):
 
 def has_functional(acc):
     # a study qualifies only if it has an aggregated InterPro (IPR) functional
-    # abundance table -> that is the wide (10k+ feature) matrix we use as X
+    # abundance table -> that is the wide (10k+ feature) matrix use as X
     url = f"{API}/studies/{acc}/downloads"
     resp = requests.get(url, headers=H, timeout=30)
     resp.raise_for_status()
@@ -98,7 +97,7 @@ def fetch(candidate):
     table = pd.read_csv(io.StringIO(text), sep="\t")
     table = table.set_index(table.columns[0])                    # move sample id out and make it row labels 
     table = table.drop(columns="description", errors="ignore")   # 2nd column is a text description
-    table = table.transpose()                                           # transpose to samples x features
+    table = table.transpose()                                            # transpose to samples x features
 
     # target data lives in sample metadata -> two differenet id systems
     #
@@ -148,8 +147,7 @@ def fetch(candidate):
                 labels[sample_id] = str(value).strip().lower()
 
         # keep only the groups that have enough samples
-        counts = Counter(labels.values())
-        big_groups = [g for g, n in counts.items() if n >= MIN_CLASS]
+        big_groups = [g for g, n in Counter(labels.values()).items() if n >= MIN_CLASS]
         if 2 <= len(big_groups) <= MAX_CLASSES:
             best_field = field
             best_labels = {s: v for s, v in labels.items() if v in big_groups}
