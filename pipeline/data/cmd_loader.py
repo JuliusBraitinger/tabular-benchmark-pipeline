@@ -115,7 +115,7 @@ def fetch(candidate):
         cases = cases.to_series().sample(n=n, random_state=SEED).index
         controls = controls.to_series().sample(n=n, random_state=SEED).index
         rows = cases.append(controls)
-        y = pd.Series(["disease"] * n + ["healthy‚"] * n, index=rows)
+        y = pd.Series(["disease"] * n + ["healthy"] * n, index=rows)
         task = "classification"
 
     X = np.log1p(X.loc[rows]).reset_index(drop=True)
