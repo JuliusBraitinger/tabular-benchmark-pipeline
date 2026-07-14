@@ -7,6 +7,8 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from pipeline.data.base import CandidateInfo, Dataset
 from pipeline import stats
@@ -16,6 +18,9 @@ API = "https://www.ebi.ac.uk/metagenomics/api/v1"
 H = {"Accept": "application/json"}
 
 MISSING = (None, "")
+# technical / junk fields never make a good biological target -> skip them so the picker
+# lands on geography / environment (biogeography), not dates or raw coordinates
+SKIP_SUBSTRINGS = ("date", "latitude", "longitude")
 
 
 BIOMES = ["root:Host-associated", "root:Environmental:Aquatic"]
@@ -24,13 +29,18 @@ MIN_CLASS = 30                   # a target class needs at least this many sampl
 MAX_CLASSES = 10                 # skip near-unique fields (coordinates, ids)
 
 
+# a requests Session that auto-retries with backoff -> EBI's API times out a lot
+SESSION = requests.Session()
+SESSION.headers.update(H)
+SESSION.mount("https://", HTTPAdapter(max_retries=Retry(
+    total=4, backoff_factor=1, status_forcelist=(500, 502, 503, 504))))
+
+
 def studies(biome):
     # fetch all studies for a given biome, yield (accession, project, n_samples, name)
     url = f"{API}/biomes/{biome}/studies"
     while url:
-        resp = requests.get(url, headers=H, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        data = SESSION.get(url, timeout=30).json()
         for study in data.get("data", []):
             a = study["attributes"]
             acc = a["accession"]
@@ -44,9 +54,7 @@ def has_functional(acc):
     # a study qualifies only if it has an aggregated InterPro (IPR) functional
     # abundance table -> that is the wide (10k+ feature) matrix use as X
     url = f"{API}/studies/{acc}/downloads"
-    resp = requests.get(url, headers=H, timeout=30)
-    resp.raise_for_status()
-    for d in resp.json().get("data", []):
+    for d in SESSION.get(url, timeout=30).json().get("data", []):
         if "IPR_abundances" in d["attributes"]["alias"]:
             return True
     return False
@@ -84,7 +92,7 @@ def list_candidates(max_candidates=50):
 def fetch(candidate):
    
     # 1. find the InterPro (IPR) functional table, download it, and transpose to samples x features
-    downloads = requests.get(f"{API}/studies/{candidate.id}/downloads", headers=H, timeout=30).json()
+    downloads = SESSION.get(f"{API}/studies/{candidate.id}/downloads", timeout=30).json()
     table_url = None
     for i in downloads["data"]:
         if "IPR_abundances" in i["attributes"]["alias"]:
@@ -93,7 +101,7 @@ def fetch(candidate):
     if table_url is None:
         return None, []
 
-    text = requests.get(table_url, timeout=90).text
+    text = SESSION.get(table_url, timeout=90).text
     table = pd.read_csv(io.StringIO(text), sep="\t")
     table = table.set_index(table.columns[0])                    # move sample id out and make it row labels 
     table = table.drop(columns="description", errors="ignore")   # 2nd column is a text description
@@ -104,7 +112,7 @@ def fetch(candidate):
     sample_of = {}
     url = f"{API}/studies/{candidate.id}/analyses?page_size=100"
     while url:
-        page = requests.get(url, headers=H, timeout=60).json() #look at trhough /analyses endpoint. Each analysis links sample to run/assembly it was derived from
+        page = SESSION.get(url, timeout=60).json() #each analysis links its sample to the run/assembly it was derived from
         for analysis in page["data"]: 
             rel = analysis["relationships"]
             sample = rel["sample"]["data"]
@@ -120,7 +128,7 @@ def fetch(candidate):
     meta_of = {}
     url = f"{API}/studies/{candidate.id}/samples?page_size=100" 
     while url:
-        page = requests.get(url, headers=H, timeout=60).json()
+        page = SESSION.get(url, timeout=60).json()
         for s in page["data"]: #for each sample, get the metadata fields and values
             attrs = s["attributes"]
             fields = {}
@@ -138,6 +146,8 @@ def fetch(candidate):
     best_field = None
     best_labels = None
     for field in sorted(all_fields):
+        if any(bad in field.lower() for bad in SKIP_SUBSTRINGS):   # skip date / coordinate junk
+            continue
         # give each sample its value for this field
         labels = {}
         for sample_id in table.index:
