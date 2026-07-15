@@ -28,8 +28,8 @@ from pipeline.soft_rules import s6_class_balance as s6
 OUTPUT_DIR = Path(os.environ.get("PIPELINE_DATA", "data")) / "datasets"
 # rule_stats/soft_stats/sankey land here: under PIPELINE_DATA on the cluster, cwd locally
 RESULTS_DIR = Path(os.environ.get("PIPELINE_DATA", "."))
-MAX_SAVED_DATASETS = 120
-MAX_PER_SOURCE_SAVED = 20  # cap saved datasets per source for a balanced benchmark  
+MAX_SAVED_DATASETS = 200   # total cap; = MAX_PER_SOURCE_SAVED x sources, with headroom
+MAX_PER_SOURCE_SAVED = 20  # cap saved datasets per source for a balanced benchmark
 A6_EXEMPT_SOURCES = {"chembl", "cmd"}
 
 def _save_dataset(ds: Dataset, output_dir: Path) -> Path:
@@ -69,10 +69,12 @@ def main() -> None:
 
     # Phase 1: scrape candidates (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
-    default_sources = ["cmd"]
+    default_sources = ["openml", "tcga", "uci", "geo_rnaseq", "cmd",
+                       "mgnify", "chembl", "metagenomics", "geo_array"]
     env_sources = os.environ.get("PIPELINE_SOURCES")  # e.g. PIPELINE_SOURCES=cmd to run one source
     sources = env_sources.split(",") if env_sources else default_sources
-    candidates = registry.list_candidates(sources=sources, max_per_source=90)
+    max_per_source = int(os.environ.get("PIPELINE_MAX_PER_SOURCE", "90"))
+    candidates = registry.list_candidates(sources=sources, max_per_source=max_per_source)
     log.info("Got %d candidates", len(candidates))
 
     # interleave sources round-robin so the total cap spreads evenly instead of
