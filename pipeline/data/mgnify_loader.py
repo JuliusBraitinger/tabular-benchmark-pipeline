@@ -110,14 +110,16 @@ def fetch(candidate):
     # target data lives in sample metadata -> two differenet id systems
     #
     sample_of = {}
+    instrument_of = {}   # sample id -> sequencing instrument (the S5 batch proxy)
     url = f"{API}/studies/{candidate.id}/analyses?page_size=100"
     while url:
         page = SESSION.get(url, timeout=60).json() #each analysis links its sample to the run/assembly it was derived from
-        for analysis in page["data"]: 
+        for analysis in page["data"]:
             rel = analysis["relationships"]
             sample = rel["sample"]["data"]
             if sample is None:
                 continue
+            instrument_of[sample["id"]] = analysis["attributes"].get("instrument-model") or "na"
             for kind in ("run", "assembly"):
                 ref = rel[kind]["data"]
                 if ref is not None:
@@ -171,8 +173,11 @@ def fetch(candidate):
     X = np.log1p(table.loc[samples]).reset_index(drop=True)
     y = pd.Series([best_labels[s] for s in samples], name="target")
 
-    # batch proxy for S5: samples sharing a collection date were likely sequenced together
-    batch = [str(meta_of.get(sample_of.get(r), {}).get("collection date", "na")).lower() for r in samples]
+    # batch proxy for S5: which sequencing instrument processed each sample
+    batch = []
+    for r in samples:
+        sample = sample_of.get(r)
+        batch.append(instrument_of.get(sample, "na").lower())
 
     results = hard_rules.run_data_checks(X=X, y=y, task_type="classification", skip=("A4",))
     if not hard_rules.all_passed(results):
