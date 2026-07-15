@@ -171,18 +171,21 @@ def fetch(candidate):
     X = np.log1p(table.loc[samples]).reset_index(drop=True)
     y = pd.Series([best_labels[s] for s in samples], name="target")
 
+    # batch proxy for S5: samples sharing a collection date were likely sequenced together
+    batch = [str(meta_of.get(sample_of.get(r), {}).get("collection date", "na")).lower() for r in samples]
+
     results = hard_rules.run_data_checks(X=X, y=y, task_type="classification", skip=("A4",))
     if not hard_rules.all_passed(results):
         return None, results
 
     return Dataset(
                 id=candidate.id,
-                source="mgnify", 
+                source="mgnify",
                 name=candidate.name,
                 X=X,
                 y=y,
                 task_type="classification",
                 metadata={**candidate.metadata,
-                "target_field": best_field},
+                          "target_field": best_field, "batch": batch},
                 domain="biological"), results
 
