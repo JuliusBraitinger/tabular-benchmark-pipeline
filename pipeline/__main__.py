@@ -66,7 +66,6 @@ def main() -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     log = logging.getLogger("pipeline")
-
     # Phase 1: scrape candidates (metadata + metadata hard rules)
     log.info("=== Phase 1: scraping candidates ===")
     default_sources = ["openml", "tcga", "uci", "geo_rnaseq", "cmd",
