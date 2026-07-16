@@ -1,5 +1,5 @@
 # MGnify loader
-#Biomes: host-associated + aquatic. Human-gut studies are skipped (already covered by cmd).
+#Biomes: host-associated (human/animal gut + plants) + aquatic + soil microbiomes.
 
 import io
 from collections import Counter
@@ -23,7 +23,9 @@ MISSING = (None, "")
 SKIP_SUBSTRINGS = ("date", "latitude", "longitude")
 
 
-BIOMES = ["root:Host-associated", "root:Environmental:Aquatic"]
+# plants + soil first so the scarce plant studies are reached before the gut-heavy
+BIOMES = ["root:Host-associated:Plants", "root:Environmental:Terrestrial:Soil",
+          "root:Host-associated", "root:Environmental:Aquatic"]
 MIN_SAMPLES = 150
 MIN_CLASS = 30                   # a target class needs at least this many samples
 MAX_CLASSES = 10                 # skip near-unique fields (coordinates, ids)
@@ -40,7 +42,10 @@ def studies(biome):
     # fetch all studies for a given biome, yield (accession, project, n_samples, name)
     url = f"{API}/biomes/{biome}/studies"
     while url:
-        data = SESSION.get(url, timeout=30).json()
+        try:
+            data = SESSION.get(url, timeout=30).json()
+        except requests.exceptions.RequestException:
+            break   # EBI unresponsive -> stop scanning this biome instead of crashing
         for study in data.get("data", []):
             a = study["attributes"]
             acc = a["accession"]
@@ -54,15 +59,22 @@ def has_functional(acc):
     # a study qualifies only if it has an aggregated InterPro (IPR) functional
     # abundance table -> that is the wide (10k+ feature) matrix use as X
     url = f"{API}/studies/{acc}/downloads"
-    for d in SESSION.get(url, timeout=30).json().get("data", []):
-        if "IPR_abundances" in d["attributes"]["alias"]:
-            return True
+    try:
+        for d in SESSION.get(url, timeout=30).json().get("data", []):
+            if "IPR_abundances" in d["attributes"]["alias"]:
+                return True
+    except requests.exceptions.RequestException:
+        pass   # EBI timed out on this study -> skip it, don't crash the whole scrape
     return False
 
 def list_candidates(max_candidates=50):
     candidates = []
+    seen = set()   # a study can appear under several biomes (Plants sits inside Host-associated)
     for biome in BIOMES:
         for acc, proj, n, name in studies(biome):
+            if acc in seen:
+                continue
+            seen.add(acc)
             if not n or n < MIN_SAMPLES or not has_functional(acc):
                 continue
             results = hard_rules.run_metadata_checks(
