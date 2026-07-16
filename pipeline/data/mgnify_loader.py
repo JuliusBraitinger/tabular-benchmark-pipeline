@@ -190,7 +190,7 @@ def fetch(candidate):
                 X=X,
                 y=y,
                 task_type="classification",
-                metadata={**candidate.metadata,
+                metadata={**candidate.metadata, "url": candidate.url,
                           "target_field": best_field, "batch": batch},
                 domain="biological"), results
 

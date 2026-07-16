@@ -88,7 +88,7 @@ def list_candidates(max_candidates=50):
                 n_features=FP_N_BITS,
                 task_type="regression",
                 licence="CC BY-SA 3.0",
-                url=f"https://www.ebi.ac.uk/chembl/target_report_card/{target_id}/",
+                url=f"https://www.ebi.ac.uk/chembl/explore/target/{target_id}",
                 metadata={},
                 domain="chemical",
             ))
