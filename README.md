@@ -14,8 +14,8 @@ A visual overview of what each file does and how they work together.
 python -m pipeline      # runs pipeline/__main__.py
 ```
 
-`__main__.py` orchestrates the run as logged stages (labelled Phase 1, 2, and 4
-in the code). Datasets are streamed to disk between stages so RAM stays bounded
+`__main__.py` orchestrates the run as logged stages (labelled Phase 1, 2, 4,
+and 5 in the code). Datasets are streamed to disk between stages so RAM stays bounded
 to one dataset at a time.
 
 1. **Phase 1 — scrape** — `registry.list_candidates()` collects candidates from
@@ -24,10 +24,13 @@ to one dataset at a time.
    runs the data hard rules (A1/A2/A3/A4); `__main__` then applies **A6**
    (cross-dataset duplicate check) before persisting the `Dataset` under
    `data/datasets/{id}/` as `X.parquet`, `y.parquet`, `meta.pkl` and releasing
-   it from memory. Stops at `MAX_SAVED_DATASETS` (100). Writes `rule_stats.csv`.
+   it from memory. Stops at `MAX_SAVED_DATASETS` (200); `MAX_PER_SOURCE_SAVED`
+   (20) keeps the benchmark balanced across sources. Writes `rule_stats.csv`.
 3. **Phase 4 — soft rules** — every saved dataset is reloaded one at a time and
    scored by S1–S6 (S1 first needs the pre-computed fingerprint pool). Results
    land in `soft_stats.csv`.
+4. **Phase 5 — reports** — a per-dataset HTML evaluation report + `metrics.csv`
+   (trains a model per dataset; skippable via the `PIPELINE_SKIP_REPORTS` env var).
 
 ## File Map & Dependencies
 
@@ -161,7 +164,7 @@ pool-free and run in the same loop.
 
 ## Data Sources
 
-Six loaders feed the dispatcher, each owning its own scrape → fetch path:
+Each loader owns its own scrape → fetch path; the dispatcher routes by `source`:
 
 | Source | Loader | Access | Target |
 |--------|--------|--------|--------|
@@ -169,8 +172,13 @@ Six loaders feed the dispatcher, each owning its own scrape → fetch path:
 | `tcga` | `tcga_loader.py` | GDC API | sample_type (tumor/normal), vital_status fallback |
 | `geo_array` | `geo_array_loader.py` | Entrez + GEOparse | built from sample text — **slow scrape** |
 | `geo_rnaseq` | `geo_rnaseq_loader.py` | local Parquet exports | classification col with most labels |
-| `kaggle` | `kaggle_loader.py` | Kaggle API | heuristic detection |
+| `kaggle` | `kaggle_loader.py` | Kaggle API | heuristic detection (needs `~/.kaggle` creds) |
 | `uci` | `uci_loader.py` | ucimlrepo | already defined |
+| `cmd` | `cmd_loader.py` | local Parquet (curatedMetagenomicData) | healthy vs one disease — gut-microbiome taxa |
+| `metagenomics` | `metagenomics_loader.py` | MetAML marker table (download) | healthy vs one disease — microbiome markers |
+| `chembl` | `chembl_loader.py` | ChEMBL API | per-target bioactivity — ECFP fingerprints (regression) |
+| `mgnify` | `mgnify_loader.py` | MGnify API (EBI) | auto-picked metadata field (biogeography) — IPR functional features; gut / aquatic / plant / soil biomes |
+| `local` | `local_loader.py` | reads `data/datasets/` | re-loads already-saved datasets (not an external source) |
 
 **`geo_rnaseq` is new and unlike the others — it has no live API.** It reads
 Parquet exports (`<ACC>_X.parquet`, `<ACC>_metadata.parquet`, `<ACC>_info.json`)
@@ -231,7 +239,7 @@ capped at `MAX_SAMPLES` rows). The loader still runs the full hard-rule chain
 | S2 IID            | 10 | strict exact-duplicate rows on `(X | y)` via row hashing |
 | S3 Data Quality   | 15 | composite: completeness, consistency, outliers (IsolationForest), constant features |
 | S4 Data Leakage   | 20 | implemented — per-feature predictive-gap detection: worst vs median feature stat (Mann-Whitney / Spearman); low score when one feature sticks out far above the bulk (leak), high when signal is spread (biology). Optional group k-fold leak test is a future add-on |
-| S5 Batch Effects  |  – | **stub** — returns 1.0; needs batch labels we don't reliably have |
+| S5 Batch Effects  |  – | implemented — `1 - NMI(target, batch)`: flags a target that is just a technical batch relabelled. Needs a per-sample `batch` label in metadata (mgnify persists the sequencing instrument); sources without one return 1.0. Per-dataset diagnostic — near-constant across the benchmark, so CRITIC drops it |
 | S6 Class Balance  |  5 | normalized Shannon entropy of class distribution |
 | S7 Domain-QC      |  – | **placeholder** — too domain-specific to automate generically |
 
@@ -322,16 +330,16 @@ This downloads the full feature matrix, so for a large TCGA project it's hundred
 ### Running soft rules on already-saved datasets
 
 If `data/datasets/` already contains datasets from a previous run, you can
-re-score them without refetching. `__main__._load_dataset` already does the
+re-score them without refetching. `__main__.load_dataset` already does the
 parquet + pickle boilerplate, and `rglob("X.parquet")` walks any depth so
 kaggle's two-level `{owner}/{slug}/` layout works the same as everything else:
 
 ```python
 from pathlib import Path
-from pipeline.__main__ import _load_dataset
+from pipeline.__main__ import load_dataset
 from pipeline.soft_rules import s2_iid
 
 for x_path in Path("data/datasets").rglob("X.parquet"):
-    ds = _load_dataset(x_path.parent)
+    ds = load_dataset(x_path.parent)
     print(ds.id, s2_iid.score(ds).score)
 ```
