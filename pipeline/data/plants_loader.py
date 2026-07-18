@@ -22,7 +22,7 @@ def download():
         dest = CACHE_DIR / f["key"]
         if dest.exists():
             continue
-        with requests.get(["links"]["self"], stream=True, timeout=180) as r: 
+        with requests.get(f["links"]["self"], stream=True, timeout=180) as r: 
             r.raise_for_status()
             with open(dest, "wb") as out:
                 for chunk in r.iter_content(1 << 20): # only keep 1MB in memory at a time 
@@ -31,7 +31,27 @@ def download():
 
 
 def list_candidates(max_candidates=50):
-    return None
+    # one candidate per (species x target): tissue -> classification, age -> regression.
+    # species matrices are the "combined_output.tsv" 
+    files = requests.get(API, timeout=60).json()["files"]
+    species = [f["key"] for f in files if "combined_output" in f["key"]][:max_candidates] #get species files only, limit to max_candidates
+    candidates = []
+    for key in species:
+        name = key.split("-", 1)[1].replace("_combined_output.tsv", "")  # need to remove the prefix and suffix to get the species name
+        for target, task in TARGETS.items():
+            candidates.append(CandidateInfo(
+                id=f"plants-{name}-{target}",
+                source="plants",
+                name=f"{name.replace('_', ' ')} ({target})",
+                n_samples=None,
+                n_features=None,
+                task_type=task,
+                licence="cc-by-4.0",
+                url=API,
+                metadata={"file": key, "target": target},
+                
+                domain="biological"))
+    return candidates
 
 
 def fetch(candidate):
