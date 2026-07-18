@@ -1,7 +1,8 @@
 # Plant RNA-seq conglomerate (Ficklin lab, Zenodo 13328785): 12 plant species -> per species
 # a gene-expression matrix (rows = samples, cols = genes, read counts), plus Tissue and Age
 # annotation files. Auto-downloads the record on first use and caches it. One dataset per
-# species x target: tissue (classification) and age (regression), predicted from expression.
+# species x target: tissue (classification) and age (regression),  definded in AGE_SPECIES, which species will be regression. Other 6 will be classification tasks 
+
 
 import os
 from pathlib import Path
@@ -13,6 +14,9 @@ from pipeline.data.base import CandidateInfo
 API = "https://zenodo.org/api/records/13328785"
 CACHE_DIR = Path(os.environ.get("PLANTS_DIR", "/tmp/plants_cache"))
 TARGETS = {"tissue": "classification", "age": "regression"}
+AGE_SPECIES = {"Arabidopsis_thaiana", "Zea_mays", "Oryza_sativa",
+               "Triticum_aestivum", "Solanum_tuberosum", "Hordeum_vulgare"}
+
 
 
 def download():
@@ -41,13 +45,14 @@ def list_candidates(max_candidates=50):
             continue
         name = key.split("-", 1)[1].replace("_combined_output.tsv", "") #split off the prefix and suffix for species name
         for target, task in TARGETS.items():
-            candidates.append(CandidateInfo(
+             target = "age" if name in AGE_SPECIES else "tissue"
+        candidates.append(CandidateInfo(
                 id=f"plants-{name}-{target}",
                 source="plants",
                 name=f"{name.replace('_', ' ')} ({target})",
                 n_samples=None,
                 n_features=None,
-                task_type=task,
+                task_type=TARGETS[target],
                 licence="cc-by-4.0",
                 url=API,
                 metadata={"file": key, "target": target, "url": API},
