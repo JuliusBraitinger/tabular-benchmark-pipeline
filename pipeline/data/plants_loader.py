@@ -48,8 +48,7 @@ def list_candidates(max_candidates=50):
                 task_type=task,
                 licence="cc-by-4.0",
                 url=API,
-                metadata={"file": key, "target": target},
-                
+                metadata={"file": key, "target": target, "url": API},
                 domain="biological"))
     return candidates
 
