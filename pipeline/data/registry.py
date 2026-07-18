@@ -30,6 +30,7 @@ _LOADER_MODULES: dict[str, str] = {
     "metagenomics": "pipeline.data.metagenomics_loader",
     "cmd": "pipeline.data.cmd_loader",
     "mgnify": "pipeline.data.mgnify_loader",
+    "plants": "pipeline.data.plants_loader",
 }
 
 

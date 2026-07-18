@@ -69,7 +69,7 @@ def fetch(candidate):
     # time_in_days (already unit-normalised -> the "age" string mixes weeks/days/months/years)
     target = candidate.metadata["target"]
     ann = pd.read_csv(next(cache.glob(f"File_*{target.capitalize()}*")), sep="\t").set_index("experiment") #ann is the annotation file for the target, set index to experiment
-    y = ann["time_in_days"] if target == "age" else ann["tissue"] #check the target and assign the correct column to y
+    y = ann["time_in_days"] if target == "age" else ann["category"] #check the target and assign the correct column to y
 
     # keep only samples that have both expression and a label
     rows = X.index.intersection(y.dropna().index)
