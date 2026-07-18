@@ -6,10 +6,11 @@
 
 import os
 from pathlib import Path
-
+import pandas as pd
+import numpy as np
 import requests
-
-from pipeline.data.base import CandidateInfo
+from pipeline.hard_rules import runner as hard_rules
+from pipeline.data.base import CandidateInfo, Dataset
 
 API = "https://zenodo.org/api/records/13328785"
 CACHE_DIR = Path(os.environ.get("PLANTS_DIR", "/tmp/plants_cache"))
@@ -60,5 +61,32 @@ def list_candidates(max_candidates=50):
 
 
 def fetch(candidate):
-    #TODO implement
-    return None
+    # download the record, then load this species' matrix (rows = samples, cols = genes)
+    cache = download()
+    X = pd.read_csv(cache / candidate.metadata["file"], sep="\t", index_col=0)
+
+    # matching annotation file holds the label per experiment; both are tab-separated. age uses
+    # time_in_days (already unit-normalised -> the "age" string mixes weeks/days/months/years)
+    target = candidate.metadata["target"]
+    ann = pd.read_csv(next(cache.glob(f"File_*{target.capitalize()}*")), sep="\t").set_index("experiment") #ann is the annotation file for the target, set index to experiment
+    y = ann["time_in_days"] if target == "age" else ann["tissue"] #check the target and assign the correct column to y
+
+    # keep only samples that have both expression and a label
+    rows = X.index.intersection(y.dropna().index)
+    X = np.log1p(X.loc[rows]).reset_index(drop=True)
+    y = y.loc[rows].reset_index(drop=True).rename("target")
+
+    results = hard_rules.run_data_checks(X=X, y=y, task_type=candidate.task_type)
+    if not hard_rules.all_passed(results):
+        return None, results
+
+    return Dataset(
+        id=candidate.id,
+        source="plants",
+        name=candidate.name,
+        X=X,
+        y=y,
+        task_type=candidate.task_type,
+        metadata={**candidate.metadata, "licence": candidate.licence, "url": candidate.url},
+        domain="biological"), results
+
