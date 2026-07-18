@@ -34,10 +34,12 @@ def list_candidates(max_candidates=50):
     # one candidate per (species x target): tissue -> classification, age -> regression.
     # species matrices are the "combined_output.tsv" 
     files = requests.get(API, timeout=60).json()["files"]
-    species = [f["key"] for f in files if "combined_output" in f["key"]][:max_candidates] #get species files only, limit to max_candidates
     candidates = []
-    for key in species:
-        name = key.split("-", 1)[1].replace("_combined_output.tsv", "")  # need to remove the prefix and suffix to get the species name
+    for f in files: #loop over the files in the Zenodo record because each species has two targets
+        key = f["key"]
+        if "combined_output" not in key:
+            continue
+        name = key.split("-", 1)[1].replace("_combined_output.tsv", "") #split off the prefix and suffix for species name
         for target, task in TARGETS.items():
             candidates.append(CandidateInfo(
                 id=f"plants-{name}-{target}",
