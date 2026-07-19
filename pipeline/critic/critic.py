@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 from sklearn.preprocessing import MinMaxScaler
 import pandas as pd
-from pipeline.config import TOTAL_POINTS, AHP_WEIGHTS, DIVERGENCE_THRESHOLD, PASS_THRESHOLD, WEIGHTS_PATH
+from pipeline.config import TOTAL_POINTS, AHP_WEIGHTS, DIVERGENCE_THRESHOLD, PASS_THRESHOLD, WEIGHTS_PATH, AHP_PART
 
 
 @dataclass(frozen=True)
@@ -81,9 +81,8 @@ def run_critic(score_matrix):
         delta = abs(ahp_points - crit_points)
         if rule in informative:
             verdict = "DIVERGE" if delta > DIVERGENCE_THRESHOLD else "AGREE"
-            # average AHP and CRITIC instead of override. softer compromise than override-on-DIVERGE.
             # see Tzeng et al. and other AHP-CRITIC integration variants in the MCDM literature.
-            final = round((ahp_points + crit_points) / 2)
+            final = round(AHP_PART * ahp_points + (1 - AHP_PART) * crit_points)
             stdv = float(standard_deviation[rule])
             info_val = float(informativeness[rule])
         else: # degenerate rule: no CRITIC signal, fall back to AHP

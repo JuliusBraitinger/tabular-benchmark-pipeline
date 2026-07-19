@@ -47,7 +47,7 @@ AHP_WEIGHTS = {"S1": 10, "S2": 10, "S3": 15, "S4": 20, "S6": 5}
 TOTAL_POINTS = 60
 PASS_THRESHOLD = 0.6  # 36/60
 DIVERGENCE_THRESHOLD = 3  # |AHP_pts - CRITIC_pts| > 3 -> diverge
-WEIGHTS_PATH = "data/critic_weights.json"
+AHP_PART = 0.6  # weight of AHP in the final score; 0.4 is CRITIC
 
 # --- API settings ---
 ENTREZ_EMAIL = os.getenv("ENTREZ_EMAIL")
