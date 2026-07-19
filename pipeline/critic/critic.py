@@ -1,7 +1,10 @@
+import json
 from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
 from sklearn.preprocessing import MinMaxScaler
 import pandas as pd
-from pipeline.config import TOTAL_POINTS, AHP_WEIGHTS, DIVERGENCE_THRESHOLD
+from pipeline.config import TOTAL_POINTS, AHP_WEIGHTS, DIVERGENCE_THRESHOLD, PASS_THRESHOLD, WEIGHTS_PATH
 
 
 @dataclass(frozen=True)
@@ -22,6 +25,7 @@ RULES = ["S1", "S2", "S3", "S4", "S5", "S6"]
 
 
 def run_critic(score_matrix):
+    # weight each soft rule by how much its scores vary and how independent it is, then blend with AHP.
     # impute NaN cells with column medians instead of dropping the whole row.
     # avoids artificially inflating S6's variance (regression rows would otherwise be dropped,
     # leaving only classification rows where S6 happens to spread widely).
@@ -101,10 +105,6 @@ def run_critic(score_matrix):
     return results
 
 
-def final_weights(critic_results):
-    return {r.rule: r.final_score for r in critic_results}
-
-
 def results_table(results):
     #per-rule CRITIC results for reporting (one row per soft rule)
     return pd.DataFrame([{
@@ -125,3 +125,59 @@ def correlation_table(score_matrix): #helper that can be run without whole criti
     normalized = pd.DataFrame(MinMaxScaler().fit_transform(sub[informative]),
                               columns=informative, index=sub.index)
     return normalized.corr()
+
+
+def load_weights(path=WEIGHTS_PATH):
+    # load the frozen soft-rule weights that calibrate() derived from one big CRITIC run.
+    # falls back to the AHP weights if no calibration file exists yet.
+    p = Path(path)
+    if not p.exists():
+        return dict(AHP_WEIGHTS)
+    data = json.loads(p.read_text())
+    return {r: data[r] for r in RULES if r in data}   # keep only the rule weights, ignore metadata
+
+
+def compute_critic_scores(score_matrix, weights):
+    # composite = weighted average of the soft-rule scores per dataset, using CRITIC weights.
+    rules = [r for r in weights if r in score_matrix.columns]
+    w = pd.Series({r: float(weights[r]) for r in rules})
+    scores = score_matrix[rules]
+    present = scores.notna()
+
+    weighted = (scores.fillna(0.0) * w).sum(axis=1)         # Sigma score*weight over present rules
+    applicable = present.mul(w, axis=1).sum(axis=1)          # total weight of the present rules
+    fraction = weighted / applicable                         # weighted mean in [0, 1]
+
+    result = pd.DataFrame({
+        "composite_fraction": fraction,
+        "composite_score": fraction * TOTAL_POINTS,
+    })
+    result["passed"] = result["composite_fraction"] >= PASS_THRESHOLD
+
+    return result.sort_values("composite_score", ascending=False)
+
+
+def calibrate(score_matrix_path="soft_stats.csv", out_path=WEIGHTS_PATH):
+    # one-off: derive the soft-rule weights on soft_stats.csv and freeze them (for debugging and reproducibility)
+    score_matrix = pd.read_csv(score_matrix_path, index_col=0)
+    results = run_critic(score_matrix)
+    weights = {r.rule: r.final_score for r in results}   # rule -> final (AHP+CRITIC) weight
+    out_dir = Path(out_path).parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "derived_at": date.today().isoformat(),
+        "n_datasets": int(score_matrix.shape[0]),
+        "source": f"CRITIC calibration on {score_matrix_path}",
+        **weights,
+    }
+    Path(out_path).write_text(json.dumps(payload, indent=2))
+    results_table(results).to_csv(out_dir / "critic_results.csv", index=False)
+    correlation_table(score_matrix).round(4).to_csv(out_dir / "critic_correlations.csv")
+    return weights
+
+
+if __name__ == "__main__":
+    # run once after a big configuration run; the pipeline then loads WEIGHTS_PATH each run.
+    weights = calibrate()
+    print("CRITIC-calibrated soft-rule weights:", weights)
+    print(f"written to {WEIGHTS_PATH} (+ critic_results.csv, critic_correlations.csv)")
