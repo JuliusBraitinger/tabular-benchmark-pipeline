@@ -12,6 +12,7 @@ from sklearn import metrics as skm
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import cross_val_predict
 from sklearn.preprocessing import LabelEncoder, label_binarize
+from pipeline.config import TOTAL_POINTS
 
 log = logging.getLogger(__name__)
 CV_FOLDS = 3
@@ -180,16 +181,32 @@ def figures(ev):
     return [pva, rvf, qq]
 
 
-def build_html(ev):
+def build_html(ev, soft=None):
     figs = [f.to_html(full_html=False, include_plotlyjs=(i == 0)) for i, f in enumerate(figures(ev))]
     rows = "".join("<tr><td>%s</td><td>%s</td></tr>" % (k, "n/a" if v is None else format(v, ".4f"))
                    for k, v in ev["metrics"].items())
     tips = "".join("<li>%s</li>" % t for t in insights(ev))
     idlink = f"<a href='{ev['url']}'>{ev['id']}</a>" if ev.get("url") else ev["id"]
+
+    # the dataset's final soft-rule score (composite of S1..S6 with the calibrated weights) + pass/fail
+    soft_html = ""
+    if soft is not None:
+        verdict = "PASS" if str(soft.get("passed")).lower() == "true" else "FAIL"
+        frac = soft["composite_fraction"]  # rate the dataset by its share of the 60 points
+        tier = ("best" if frac >= 0.8 else "good" if frac >= 0.7 else "mediocre"
+                if frac >= 0.6 else "poor" if frac >= 0.5 else "really bad")
+        breakdown = "".join("<tr><td>%s</td><td>%.3f</td></tr>" % (k, soft[k])
+                            for k in soft if k[:1] == "S" and k[1:].isdigit() and pd.notna(soft[k]))
+        soft_html = (f"<h2>Soft-rule score</h2>"
+                     f"<p><b>{soft['composite_score']:.1f} / {TOTAL_POINTS}</b> "
+                     f"({frac:.0%}) &mdash; {verdict} &mdash; <b>{tier}</b></p>"
+                     f"<table><tr><th>rule</th><th>score</th></tr>{breakdown}</table>")
+
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>{ev['id']}</title>
 <style>body{{font-family:system-ui,sans-serif;margin:2rem}}table{{border-collapse:collapse}}
 td,th{{border:1px solid #ddd;padding:4px 10px}}</style></head><body>
 <h1>{ev['name']}</h1><p>{idlink} - {ev['source']} - {ev['task']} - N={ev['n']} x P={ev['p']}</p>
+{soft_html}
 <h2>Insights</h2><ul>{tips}</ul>
 <h2>Metrics ({CV_FOLDS}-fold CV)</h2><table><tr><th>metric</th><th>value</th></tr>{rows}</table>
 <h2>Plots</h2>{''.join(figs)}</body></html>"""
@@ -199,14 +216,24 @@ def generate_reports(ds_dirs, load_dataset, results_dir="."):
     # all HTMLs go into one reports/ dir, each named after its dataset id
     reports_dir = Path(results_dir) / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
+    # per-dataset soft scores (phase 4) + final composite score (phase 6), if those ran
+    soft_path = Path(results_dir) / "soft_stats.csv"
+    score_path = Path(results_dir) / "critic_scores.csv"
+    soft_df = pd.read_csv(soft_path, index_col=0) if soft_path.exists() else pd.DataFrame()
+    score_df = pd.read_csv(score_path, index_col=0) if score_path.exists() else pd.DataFrame()
     rows = []
     for i, d in enumerate(ds_dirs, 1):
         ds = load_dataset(d)
         log.info("[%d/%d] report %s", i, len(ds_dirs), ds.id)
         try:
             ev = evaluate_dataset(ds)
+            soft = None
+            if ev["id"] in score_df.index:
+                soft = dict(score_df.loc[ev["id"]])
+                if ev["id"] in soft_df.index:
+                    soft.update(soft_df.loc[ev["id"]].to_dict())
             name = "".join(c if c.isalnum() or c in "-_." else "_" for c in str(ev["id"]))  # filesystem-safe id
-            (reports_dir / f"{name}.html").write_text(build_html(ev), encoding="utf-8")
+            (reports_dir / f"{name}.html").write_text(build_html(ev, soft), encoding="utf-8")
         except Exception:
             log.exception("  report failed for %s -- skipping (run continues)", ds.id)
             continue

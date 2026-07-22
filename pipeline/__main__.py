@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from pipeline.config import PASS_THRESHOLD
 from pipeline.data import registry
 from pipeline.data.base import Dataset
 from pipeline.hard_rules import a6_cross_duplicate
@@ -147,6 +148,26 @@ def run_soft_rules(saved_dirs: list[Path]) -> None:
     log.info("Saved soft_stats.csv")
 
 
+def run_final_scoring(soft_stats_path: str) -> None:
+    # apply the frozen soft-rule weights to score every dataset and mark which ones pass.
+    # the weights come from a separate one-off CRITIC calibration
+    # (python -m pipeline.critic.critic) and are NOT re-derived on every run.
+    log.info("=== Phase 6: final scoring ===")
+    from pipeline.config import WEIGHTS_PATH
+    from pipeline.critic.critic import load_weights, compute_critic_scores
+
+    weights = load_weights()
+    source = "CRITIC-calibrated" if Path(WEIGHTS_PATH).exists() else "AHP defaults (no calibration yet)"
+    log.info("Using %s weights: %s", source, weights)
+
+    score_matrix = pd.read_csv(soft_stats_path, index_col=0)
+    scored = compute_critic_scores(score_matrix, weights)
+    scored_path = str(RESULTS_DIR / "critic_scores.csv")
+    scored.to_csv(scored_path)
+    log.info("%d/%d datasets pass (fraction >= %.2f); wrote %s",
+             int(scored["passed"].sum()), len(scored), PASS_THRESHOLD, scored_path)
+
+
 def run_reports(saved_dirs: list[Path]) -> None:
     # per-dataset reports (characterisation, not a gate); skippable since it retrains a model each
     if os.environ.get("PIPELINE_SKIP_REPORTS"):
@@ -174,6 +195,7 @@ def main() -> None:
         return
 
     run_soft_rules(saved_dirs)
+    run_final_scoring(str(RESULTS_DIR / "soft_stats.csv"))
     run_reports(saved_dirs)
 
 

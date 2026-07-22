@@ -11,6 +11,8 @@ def record (dataset, soft_results):
         "url": dataset.metadata.get("url", ""),
         "n_rows": dataset.X.shape[0],
         "n_features": dataset.X.shape[1],
+        "task_type": dataset.task_type,
+        "n_classes": dataset.y.nunique() if "classification" in dataset.task_type else None,
     }
 
     for r in soft_results:
