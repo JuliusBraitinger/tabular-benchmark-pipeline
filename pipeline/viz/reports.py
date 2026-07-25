@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from sklearn import metrics as skm
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.model_selection import cross_val_predict
+from sklearn.model_selection import KFold, StratifiedKFold, cross_val_predict
 from sklearn.preprocessing import LabelEncoder, label_binarize
 from pipeline.config import TOTAL_POINTS
 
@@ -38,6 +38,13 @@ def make_report_model(task_type, max_features=None):
     return cls(**kw)
 
 
+def make_cv(task_type):
+    # shuffle the folds, else datasets sorted by group get rejected for no reason
+    if "classification" in task_type:
+        return StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=42)
+    return KFold(n_splits=CV_FOLDS, shuffle=True, random_state=42)
+
+
 def evaluate_dataset(ds):
     clf = "classification" in ds.task_type
     y = ds.y[ds.y.notna()]
@@ -55,11 +62,11 @@ def evaluate_dataset(ds):
 
     model = make_report_model(ds.task_type, "sqrt" if X.shape[1] > 1000 else None)
     yt = y.to_numpy()
-    yp = cross_val_predict(model, X, yt, cv=CV_FOLDS, n_jobs=-1)
+    yp = cross_val_predict(model, X, yt, cv=make_cv(ds.task_type), n_jobs=-1)
 
     if clf:
         labels = sorted(set(yt.tolist()))
-        proba = cross_val_predict(model, X, yt, cv=CV_FOLDS, n_jobs=-1, method="predict_proba")
+        proba = cross_val_predict(model, X, yt, cv=make_cv(ds.task_type), n_jobs=-1, method="predict_proba")
         m = {"accuracy": skm.accuracy_score(yt, yp),
              "balanced_accuracy": skm.balanced_accuracy_score(yt, yp),
              "precision": skm.precision_score(yt, yp, average="macro", zero_division=0),
