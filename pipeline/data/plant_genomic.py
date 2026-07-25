@@ -8,8 +8,8 @@ from pipeline.data.base import CandidateInfo
 
 API = "https://zenodo.org/api/records/4980429"
 # one trait per crop (picked for strongest signal), keyed by the "<crop>" in "<crop>_geno.csv"
-CROP_TRAIT = {"rice": "FT", "maize": "FT", "soybean": "YLD", "sorgum": "YLD",
-              "spruce": "HT", "switchgras": "HT"}
+CROP_TRAIT = {"rice": "FT", "maize": "FT", "soy": "YLD", "sorghum": "YLD",
+              "spruce": "HT", "switchgrass": "HT"}
 
 
 def list_candidates(max_candidates=50):
@@ -29,12 +29,12 @@ def list_candidates(max_candidates=50):
             n_samples=None,
             n_features=None,
             task_type="regression",
-            licence="cc-by-4.0",
+            licence="cc0",
             url=API,
             metadata={"crop": crop, "trait": trait, "url": API},
             domain="biological"))
     return candidates
 
 def fetch(candidate):
-    #TODO implmenet
+    #TODO implemt
     return 0
