@@ -128,19 +128,20 @@ def fetch_and_save(candidates: list) -> list[Path]:
 def run_soft_rules(saved_dirs: list[Path]) -> None:
     log.info("=== Phase 4: running soft rules ===")
 
-    # S1 compares each dataset against all the others, so gather every fingerprint first.
+    # compare S1 only within the same source
+    # squashes everyone's uniqueness score to ~0. so bucket the fingerprints per source.
     log.info("Pre-computing S1 fingerprints for %d datasets...", len(saved_dirs))
-    s1_pool = {}
+    s1_pools: dict[str, dict] = {}
     for ds_dir in saved_dirs:
         ds = load_dataset(ds_dir)
-        s1_pool[ds.id] = s1.compute_fingerprint(ds)
+        s1_pools.setdefault(ds.source, {})[ds.id] = s1.compute_fingerprint(ds)
 
     names = ["S1", "S2", "S3", "S4", "S5", "S6"]
     pool_free = [s2, s3, s4, s5, s6]   # S2..S6 don't need the pool, only S1 does
     for i, ds_dir in enumerate(saved_dirs, 1):
         ds = load_dataset(ds_dir)
         log.info("[%d/%d] %s (X=%s) -- soft rules", i, len(saved_dirs), ds.id, ds.X.shape)
-        results = [s1.score(ds, pool_fingerprints=s1_pool)]
+        results = [s1.score(ds, pool_fingerprints=s1_pools[ds.source])]
         for rule in pool_free:
             results.append(rule.score(ds))
         log.info("  %s", {n: round(r.score, 3) for n, r in zip(names, results)})
