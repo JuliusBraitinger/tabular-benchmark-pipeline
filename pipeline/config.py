@@ -15,7 +15,7 @@ MIN_FEATURES = 1000
 # this once concat / pyarrow / joblib copies are factored in. Microarray
 # studies above this cap (typically methylation/CNV with 450k-850k probes)
 # are skipped at candidate listing time to avoid OOM kills.
-MAX_FEATURES = 200_000
+MAX_FEATURES = 250_000
 
 # --- Kaggle loader thresholds ---
 KAGGLE_MIN_BYTES = 5_000_000      # 5 MB: rough A4 lower bound on zip size

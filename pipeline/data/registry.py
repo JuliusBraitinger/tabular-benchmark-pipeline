@@ -31,6 +31,7 @@ _LOADER_MODULES: dict[str, str] = {
     "cmd": "pipeline.data.cmd_loader",
     "mgnify": "pipeline.data.mgnify_loader",
     "plants": "pipeline.data.plants_loader",
+    "gp": "pipeline.data.plant_genomic",
 }
 
 
