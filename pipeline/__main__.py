@@ -64,8 +64,10 @@ def record_stats(candidate, results) -> None:
 
 def scrape_candidates() -> list:
     log.info("=== Phase 1: scraping candidates ===")
-    default_sources = ["openml", "tcga", "uci", "geo_rnaseq", "cmd",
-                       "mgnify", "chembl", "metagenomics", "geo_array"]
+    # full-run sources (restore this list for the real multi-source run):
+    # default_sources = ["openml", "tcga", "uci", "geo_rnaseq", "cmd",
+    #                    "mgnify", "chembl", "metagenomics", "geo_array"]
+    default_sources = ["gp"]   # TEST RUN: plant_genomic only
     env_sources = os.environ.get("PIPELINE_SOURCES")  # e.g. PIPELINE_SOURCES=cmd for one source
     sources = env_sources.split(",") if env_sources else default_sources
     max_per_source = int(os.environ.get("PIPELINE_MAX_PER_SOURCE", "90"))

@@ -2,6 +2,7 @@
 # dataset with out-of-fold CV and writes a self-contained HTML per dataset plus
 # an aggregate metrics.csv. clf: acc/balanced/precision/recall/f1/auc; reg:
 # r2/rmse/mae. Characterisation only, not a gate.
+# reports are created by claude code
 
 import logging
 from pathlib import Path
@@ -188,35 +189,112 @@ def figures(ev):
     return [pva, rvf, qq]
 
 
+REPORT_CSS = """
+*{box-sizing:border-box}
+:root{--bg:#f4f6f8;--surface:#fff;--ink:#111827;--muted:#6b7280;--line:#e6e8ec;
+  --accent:#3b6fb0;--track:#eef1f4;--ok:#15803d;--ok-bg:#e7f4ec;--bad:#b91c1c;--bad-bg:#fdeaea}
+body{margin:0;background:var(--bg);color:var(--ink);line-height:1.5;
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:32px 24px 64px}
+.eyebrow{text-transform:uppercase;letter-spacing:.08em;font-size:12px;color:var(--muted);font-weight:600}
+h1{font-size:26px;margin:4px 0 6px;font-weight:700;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.meta{color:var(--muted);font-size:14px}.meta a{color:var(--accent);text-decoration:none}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 14px;font-weight:600}
+.badge{font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:.03em}
+.badge.ok{background:var(--ok-bg);color:var(--ok)}.badge.bad{background:var(--bad-bg);color:var(--bad)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:24px 0}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.t-val{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+.t-lab{font-size:13px;color:var(--muted);margin-top:2px}.t-sub{font-size:12px;color:var(--muted);margin-top:6px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:24px}
+.tips{margin:0;padding-left:18px}.tips li{margin:4px 0}
+.meters{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px 28px}
+.m-top{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}
+.m-val{color:var(--muted);font-variant-numeric:tabular-nums}
+.m-track{height:8px;background:var(--track);border-radius:999px;overflow:hidden}
+.m-fill{height:100%;background:var(--accent);border-radius:999px}
+.m-code{color:var(--muted);font-weight:600;font-size:11px}
+.m-desc{font-size:12px;color:var(--muted);margin-top:5px}
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(430px,1fr));gap:18px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px;overflow:hidden}
+details.panel summary{cursor:pointer;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+table.metrics{border-collapse:collapse;width:100%;margin-top:14px;font-size:14px}
+table.metrics td{padding:6px 12px;border-bottom:1px solid var(--line)}
+table.metrics td:first-child{color:var(--muted)}
+table.metrics td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+"""
+
+
+def stat_tile(label, value, sub=""):
+    sub = "<div class='t-sub'>%s</div>" % sub if sub else ""
+    return "<div class='tile'><div class='t-val'>%s</div><div class='t-lab'>%s</div>%s</div>" % (value, label, sub)
+
+
+# short name + one-line "what it measures" per soft rule (higher score = better on all)
+SOFT_RULES = {
+    "S1": ("Uniqueness", "distinct from the other datasets"),
+    "S2": ("IID", "no duplicate rows"),
+    "S3": ("Data quality", "few missing / constant / outlier values"),
+    "S4": ("Leakage", "no train/test target leakage"),
+    "S5": ("Batch effects", "target not confounded by batch"),
+    "S6": ("Class balance", "classes not too imbalanced"),
+}
+
+
+def score_meter(key, value):
+    name, desc = SOFT_RULES.get(key, (key, ""))
+    pct = max(0.0, min(1.0, value)) * 100
+    return ("<div class='meter'>"
+            "<div class='m-top'><span><b>%s</b> <span class='m-code'>%s</span></span>"
+            "<span class='m-val'>%.2f</span></div>"
+            "<div class='m-track'><div class='m-fill' style='width:%.0f%%'></div></div>"
+            "<div class='m-desc'>%s</div></div>" % (name, key, value, pct, desc))
+
+
 def build_html(ev, soft=None):
-    figs = [f.to_html(full_html=False, include_plotlyjs=(i == 0)) for i, f in enumerate(figures(ev))]
-    rows = "".join("<tr><td>%s</td><td>%s</td></tr>" % (k, "n/a" if v is None else format(v, ".4f"))
-                   for k, v in ev["metrics"].items())
-    tips = "".join("<li>%s</li>" % t for t in insights(ev))
-    idlink = f"<a href='{ev['url']}'>{ev['id']}</a>" if ev.get("url") else ev["id"]
+    # plotly figures fill their card (default_width=100% + responsive) instead of a fixed 700px
+    figs = "".join("<div class='card'>%s</div>" % f.to_html(
+        full_html=False, include_plotlyjs=(i == 0), default_width="100%", config={"responsive": True})
+        for i, f in enumerate(figures(ev)))
+
+    m = ev["metrics"]
+    head = ("balanced accuracy", "%.3f" % m["balanced_accuracy"]) if "classification" in ev["task"] \
+        else ("R²", "%.3f" % m["r2"])
+    tiles = (stat_tile("rows (N)", "{:,}".format(ev["n"]))
+             + stat_tile("features (P)", "{:,}".format(ev["p"]))
+             + stat_tile(head[0], head[1], "%d-fold CV" % CV_FOLDS))
 
     # the dataset's final soft-rule score (composite of S1..S6 with the calibrated weights) + pass/fail
-    soft_html = ""
+    badge, soft_html = "", ""
     if soft is not None:
-        verdict = "PASS" if str(soft.get("passed")).lower() == "true" else "FAIL"
-        frac = soft["composite_fraction"]  # rate the dataset by its share of the 60 points
+        passed = str(soft.get("passed")).lower() == "true"
+        badge = "<span class='badge %s'>%s</span>" % (("ok", "PASS") if passed else ("bad", "FAIL"))
+        frac = soft["composite_fraction"]  # share of the 60 points
         tier = ("best" if frac >= 0.8 else "good" if frac >= 0.7 else "mediocre"
                 if frac >= 0.6 else "poor" if frac >= 0.5 else "really bad")
-        breakdown = "".join("<tr><td>%s</td><td>%.3f</td></tr>" % (k, soft[k])
-                            for k in soft if k[:1] == "S" and k[1:].isdigit() and pd.notna(soft[k]))
-        soft_html = (f"<h2>Soft-rule score</h2>"
-                     f"<p><b>{soft['composite_score']:.1f} / {TOTAL_POINTS}</b> "
-                     f"({frac:.0%}) &mdash; {verdict} &mdash; <b>{tier}</b></p>"
-                     f"<table><tr><th>rule</th><th>score</th></tr>{breakdown}</table>")
+        tiles += stat_tile("soft score", "%.0f/%d" % (soft["composite_score"], TOTAL_POINTS),
+                           "%.0f%% · %s" % (frac * 100, tier))
+        meters = "".join(score_meter(k, soft[k]) for k in soft
+                         if k[:1] == "S" and k[1:].isdigit() and pd.notna(soft[k]))
+        soft_html = "<section class='panel'><h2>Soft-rule scores</h2><div class='meters'>%s</div></section>" % meters
 
-    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>{ev['id']}</title>
-<style>body{{font-family:system-ui,sans-serif;margin:2rem}}table{{border-collapse:collapse}}
-td,th{{border:1px solid #ddd;padding:4px 10px}}</style></head><body>
-<h1>{ev['name']}</h1><p>{idlink} - {ev['source']} - {ev['task']} - N={ev['n']} x P={ev['p']}</p>
+    tips = "".join("<li>%s</li>" % t for t in insights(ev))
+    metric_rows = "".join("<tr><td>%s</td><td>%s</td></tr>" % (k, "n/a" if v is None else format(v, ".4f"))
+                          for k, v in m.items())
+    idlink = "<a href='%s'>%s</a>" % (ev["url"], ev["id"]) if ev.get("url") else ev["id"]
+
+    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>{ev['id']}</title>
+<style>{REPORT_CSS}</style></head><body><div class="wrap">
+<header><div class="eyebrow">{ev['source']} &middot; {ev['task']}</div>
+<h1>{ev['name']} {badge}</h1><div class="meta">{idlink}</div></header>
+<section class="tiles">{tiles}</section>
+<section class="panel"><h2>Insights</h2><ul class="tips">{tips}</ul></section>
 {soft_html}
-<h2>Insights</h2><ul>{tips}</ul>
-<h2>Metrics ({CV_FOLDS}-fold CV)</h2><table><tr><th>metric</th><th>value</th></tr>{rows}</table>
-<h2>Plots</h2>{''.join(figs)}</body></html>"""
+<section class="figs">{figs}</section>
+<details class="panel"><summary>All metrics ({CV_FOLDS}-fold CV)</summary>
+<table class="metrics">{metric_rows}</table></details>
+</div></body></html>"""
 
 
 def generate_reports(ds_dirs, load_dataset, results_dir="."):
