@@ -29,7 +29,7 @@ from pipeline.soft_rules import s6_class_balance as s6
 OUTPUT_DIR = Path(os.environ.get("PIPELINE_DATA", "data")) / "datasets"
 RESULTS_DIR = Path(os.environ.get("PIPELINE_DATA", "."))
 MAX_SAVED_DATASETS = 200   # total cap; = MAX_PER_SOURCE_SAVED x sources, with headroom
-MAX_PER_SOURCE_SAVED = 20  # cap saved datasets per source for a balanced benchmark
+MAX_PER_SOURCE_SAVED = 15  # cap saved datasets per source for a balanced benchmark
 A6_EXEMPT_SOURCES = {"chembl", "cmd"}
 
 log = logging.getLogger("pipeline")
@@ -64,10 +64,9 @@ def record_stats(candidate, results) -> None:
 
 def scrape_candidates() -> list:
     log.info("=== Phase 1: scraping candidates ===")
-    # full-run sources (restore this list for the real multi-source run):
-    # default_sources = ["openml", "tcga", "uci", "geo_rnaseq", "cmd",
-    #                    "mgnify", "chembl", "metagenomics", "geo_array"]
-    default_sources = ["gp"]   # TEST RUN: plant_genomic only
+    # every loader except kaggle (no creds on the cluster); derived from the registry so the
+    # list stays complete as loaders are added/removed.
+    default_sources = [s for s in registry._LOADER_MODULES if s != "kaggle"]
     env_sources = os.environ.get("PIPELINE_SOURCES")  # e.g. PIPELINE_SOURCES=cmd for one source
     sources = env_sources.split(",") if env_sources else default_sources
     max_per_source = int(os.environ.get("PIPELINE_MAX_PER_SOURCE", "90"))

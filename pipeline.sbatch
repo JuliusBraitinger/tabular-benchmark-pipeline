@@ -2,8 +2,8 @@
 #SBATCH --job-name=pipeline
 #SBATCH --cpus-per-task=24
 #SBATCH --mem-per-cpu=9G            
-#SBATCH --partition=week            
-#SBATCH --time=7-00:00:00            
+#SBATCH --partition=day            
+#SBATCH --time=1-00:00:00            
 #SBATCH --error=job.%J.err
 #SBATCH --output=job.%J.out
 #SBATCH --mail-type=ALL
