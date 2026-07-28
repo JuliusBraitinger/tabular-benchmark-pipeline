@@ -17,7 +17,7 @@ from pipeline.hard_rules import runner as hard_rules  # hard rule checks
 # folder to scan for exports, under the project data dir like the other datasets
 # (override with GEO_RNASEQ_DIR env var)
 EXPORT_DIR = Path(os.environ.get("GEO_RNASEQ_DIR", "data/rnaseq"))
-CACHE_DIR = Path("/tmp/geo_rnaseq_cache")  
+CACHE_DIR = Path(os.environ.get("PIPELINE_CACHE", "/tmp")) / "geo_rnaseq_cache"  
 
 
 # pick the target column: classification with most labelled samples, else first regression
@@ -69,8 +69,8 @@ def list_candidates(max_candidates=50):
             name=acc,
             skip=("A4",),
         )
-        stats.record(acc, "geo_rnaseq", acc, results)
         if not hard_rules.all_passed(results):
+            stats.record(acc, "geo_rnaseq", acc, results, "biological")
             continue
 
         candidates.append(CandidateInfo(
@@ -108,7 +108,7 @@ def fetch(candidate):
     y = meta[target].dropna()
     shared = X.index.intersection(y.index)
     if len(shared) < 2:
-        return None
+        return None, []
     X = X.loc[shared].copy()
     y = y.loc[shared]
     y.name = "target"
@@ -122,9 +122,8 @@ def fetch(candidate):
         task_type=candidate.task_type,
         skip=("A4",),  # RNA-seq is sample-poor; size filter excluded for this source
     )
-    stats.record(accessionId, "geo_rnaseq", accessionId, results)
     if not hard_rules.all_passed(results):
-        return None
+        return None, results
 
     return Dataset(
         id=f"GEO-{accessionId}",
@@ -133,8 +132,8 @@ def fetch(candidate):
         X=X,
         y=y,
         task_type=candidate.task_type,
-        metadata={**candidate.metadata, "licence": "public-domain", "transform": "log1p"},
+        metadata={**candidate.metadata, "licence": "public-domain", "transform": "log1p", "url": candidate.url},
         domain="biological",
-    )
+    ), results
 
 

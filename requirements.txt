@@ -9,3 +9,9 @@ kaggle>=1.6
 ucimlrepo>=0.0.7
 tabpfn >=2.0,<3  # TabPFN v2 (2.x); 6.x+ packages pull the v3 model
 plotly>=5.0
+rdkit
+
+# NOTE: microbiome datasets come from curatedMetagenomicData, an R/Bioconductor
+# package — NOT pip-installable. It lives in environment.yml (conda, bioconda channel)
+# and must be installed on the cluster. Stage its data with scripts/export_cmd.R
+# (R) then scripts/cmd_prep.py.

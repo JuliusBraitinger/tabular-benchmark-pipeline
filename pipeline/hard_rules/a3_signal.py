@@ -8,18 +8,18 @@
 # Metric: classification uses adjusted balanced accuracy, regression uses R2
 # (both have chance = 0; see the threshold notes below).
 #
-# TODO: run TabPFN-2 to check whether the signal is TOO good -> flag / drop.
+# TODO: precision/recall for imbalanced datasets . Achtung random baseline
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import balanced_accuracy_score, make_scorer
 from sklearn.model_selection import cross_val_score, permutation_test_score
 from sklearn.preprocessing import LabelEncoder
 from tabpfn import TabPFNClassifier, TabPFNRegressor
 
 from pipeline.hard_rules.base import RuleResult
+from pipeline.viz.reports import make_cv, make_reference_model
 
 P_VALUE_THRESHOLD = 0.05  # signal must be statistically distinguishable from random
 # absolute-score floor (the "strong enough" gate, on top of the p-value).
@@ -35,9 +35,6 @@ MIN_REG_SCORE = 0.05
 MAX_CLF_SCORE = 0.98  # adjusted balanced accuracy
 MAX_REG_SCORE = 0.98
 N_PERMUTATIONS = 100
-N_ESTIMATORS = 50
-MAX_DEPTH = 5
-CV_FOLDS = 3
 # TabPFN-2 limits (used to confirm trivial-signal verdicts from the RF)
 TABPFN_MAX_FEATURES = 500
 
@@ -66,16 +63,12 @@ def check_data(X, y, task_type="classification", **_kwargs):
 
     # pick the right model and metric based on task type
     if "classification" in task_type:
-        model = RandomForestClassifier(
-            n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=42, n_jobs=-1
-        )
+        model = make_reference_model(task_type)
         # adjusted=True -> chance-corrected (0 = random, 1 = perfect) regardless of #classes
         scoring = make_scorer(balanced_accuracy_score, adjusted=True)
         metric_name = "adj_balanced_accuracy"
     else:
-        model = RandomForestRegressor(
-            n_estimators=N_ESTIMATORS, max_depth=MAX_DEPTH, random_state=42, n_jobs=-1
-        )
+        model = make_reference_model(task_type)
         scoring = "r2"
         metric_name = "r2"
 
@@ -111,7 +104,7 @@ def check_data(X, y, task_type="classification", **_kwargs):
 
     # run the permutation test - trains model on real labels, then shuffles labels N_PERMUTATIONS times
     results = permutation_test_score(
-        model, X, y, scoring=scoring, cv=CV_FOLDS,
+        model, X, y, scoring=scoring, cv=make_cv(task_type),
         n_permutations=N_PERMUTATIONS, random_state=42, n_jobs=-1,
     )
     real_score = results[0]  # how well the model did on real labels
@@ -173,5 +166,5 @@ def tabpfn_scorer(X, y, task_type, scoring):
         model = TabPFNClassifier()
     else:
         model = TabPFNRegressor()
-    scores = cross_val_score(model, X, y, scoring=scoring, cv=CV_FOLDS)
+    scores = cross_val_score(model, X, y, scoring=scoring, cv=make_cv(task_type))
     return float(scores.mean())

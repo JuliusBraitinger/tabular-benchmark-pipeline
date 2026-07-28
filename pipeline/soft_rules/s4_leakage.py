@@ -4,6 +4,7 @@
 from pipeline.soft_rules.base import SoftRuleResult
 from scipy.stats import rankdata
 import numpy as np
+import pandas as pd
 from pipeline.soft_rules.s3_data_quality import top_variable_columns, MAX_FEATURES_FOR_HEAVY_OPS
 
 
@@ -23,6 +24,11 @@ def per_feature_stat(X, y, task_type):
 
     if "classification" in task_type:
         y_array = np.asarray(y)
+        mask = pd.notna(y_array)
+        y_array = y_array[mask]
+        ranks_x = ranks_x[mask]
+        if len(y_array) == 0:
+            return np.ones(X.shape[1])
         classes, counts = np.unique(y_array, return_counts=True)
         # most frequent class vs rest (one-vs-rest with majority as positive)
         positive = classes[np.argmax(counts)]
@@ -39,7 +45,13 @@ def per_feature_stat(X, y, task_type):
 
     # toDO regression
     if "regression" in task_type:
-        ranks_y = rankdata(np.asarray(y, dtype=float))
+        y_array = np.asarray(y)
+        mask = pd.notna(y_array)
+        y_array = y_array[mask]
+        ranks_x = ranks_x[mask]
+        if len(y_array) == 0:
+            return np.ones(X.shape[1])
+        ranks_y = rankdata(y_array.astype(float))
         x_centered = ranks_x - ranks_x.mean(axis=0)
         y_centered = ranks_y - ranks_y.mean()
         num = (x_centered * y_centered[:, None]).sum(axis=0)

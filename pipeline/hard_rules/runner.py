@@ -1,4 +1,4 @@
-"""Run all hard rules on a dataset. This is the central place where the hard rules are being executed. 
+"""Run all hard rules on a dataset. This is the central place where the hard rules are being executed.
 It contains two main functions: run_metadata_checks and run_data_checks, which run the checks which are possible only with the metadata
 and which are only possible with the actual downloaded data."""
 from __future__ import annotations
@@ -99,3 +99,14 @@ def inferred_task_type(results: list[RuleResult]) -> str | None:
         if r.rule == "A1" and "inferred_task" in r.details:
             return r.details["inferred_task"]
     return None
+
+
+def run_hard_rules(X: pd.DataFrame, y: pd.Series, candidate, skip: tuple[str, ...] = ()):
+    #method for running hard rules on dataset
+    data_results = run_data_checks(X, y, task_type=candidate.task_type, skip=skip)
+
+    if not all_passed(data_results):
+        return None, data_results
+
+    task_type = inferred_task_type(data_results) or candidate.task_type
+    return (True, task_type), data_results

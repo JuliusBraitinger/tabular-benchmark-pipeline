@@ -1,5 +1,7 @@
 # Local loader: load datasets that are stored in data/datasets/{id}/
-# for various data sources. Each dataset is expected to have X.parquet, y.parquet, and optionally meta.pkl.
+#takes csv and parquet files for X and y, and optional meta.pkl for metadata
+#TODO implement that you can choose which metadata column your target will be
+import logging
 import pandas as pd
 from pathlib import Path
 import pickle
@@ -8,8 +10,116 @@ from pipeline.data.base import CandidateInfo, Dataset
 from pipeline.hard_rules import runner as hard_rules
 from pipeline import stats
 
+logger = logging.getLogger(__name__)
+
 
 DATASETS_DIR = Path("data/datasets")
+
+
+def save_target(dataset_dir, y):
+    # save target in same format as X (csv or parquet)
+    X_csv = dataset_dir / "X.csv"
+    X_parquet = dataset_dir / "X.parquet"
+
+    if X_csv.exists():
+        y_file = dataset_dir / "y.csv"
+        y.to_csv(y_file, index=False)
+    elif X_parquet.exists():
+        y_file = dataset_dir / "y.parquet"
+        y.to_frame().to_parquet(y_file, index=False)
+
+    logger.info("Saved target to %s", y_file)
+    
+
+
+
+def find_or_build_target(dataset_dir):
+    # search for target variable in CSV files
+    # currently only for testing with Mimmic datasets 
+    targetNames = ["target", "hospital_expire_flag", "mortality", "outcome", "y","label"]
+
+    # search CSV files for target columns
+    for csv_file in dataset_dir.glob("*.csv"):
+        if csv_file.stem == "X":
+            continue
+        try:
+            df = pd.read_csv(csv_file)
+            for col in targetNames:
+                if col in df.columns:
+                    logger.info("Found target '%s' in %s", col, csv_file.name)
+                    return df[col].squeeze()
+        except Exception as e:
+            logger.debug("Error reading %s: %s", csv_file, e)
+
+    logger.warning("No target variable found in %s", dataset_dir)
+
+    for parquet_file in dataset_dir.glob("*.parquet"):
+        if parquet_file.stem == "X":
+            continue
+        try:
+            df = pd.read_parquet(parquet_file)
+            for col in targetNames:
+                if col in df.columns:
+                    logger.info("Found target '%s' in %s", col, parquet_file.name)
+                    return df[col].squeeze()
+        except Exception as e:
+            logger.debug("Error reading %s: %s", parquet_file, e)
+
+    # detect possible targets if not found
+    candidates = []
+    for file in dataset_dir.glob("*.csv"):
+        if file.stem == "X":
+            continue
+        try:
+            df = pd.read_csv(file)
+            for col in df.columns:
+                unique = df[col].nunique()
+                if unique > 10:
+                    continue
+                if df[col].isna().sum() / len(df) < 0.5:
+                    candidates.append({"file": file.name, "column": col, "cardinality": unique})
+        except:
+            pass
+
+    if candidates:
+        best = min(candidates, key=lambda c: c["cardinality"])
+        file = dataset_dir / best["file"]
+        df = pd.read_csv(file)
+        logger.info("Auto-selected target: '%s' from %s", best["column"], best["file"])
+        return df[best["column"]].squeeze()
+
+    return None
+
+
+def datasets(dataset_dir):
+    # load X and y from CSV or parquet
+    X = None
+    y = None
+
+    X_csv = dataset_dir / "X.csv"
+    X_parquet = dataset_dir / "X.parquet"
+    y_csv = dataset_dir / "y.csv"
+    y_parquet = dataset_dir / "y.parquet"
+
+    if X_csv.exists():
+        X = pd.read_csv(X_csv)
+    elif X_parquet.exists():
+        X = pd.read_parquet(X_parquet)
+
+    if y_csv.exists():
+        y = pd.read_csv(y_csv).squeeze()
+    elif y_parquet.exists():
+        y = pd.read_parquet(y_parquet)
+        if isinstance(y, pd.DataFrame):
+            y = y.iloc[:, 0]
+    else:
+        # search for target in other CSV files
+        y = find_or_build_target(dataset_dir)
+        if y is not None:
+            # save the found target to y.csv
+            save_target(dataset_dir, y)
+
+    return X, y
 
 
 def list_candidates(max_candidates=50):
@@ -21,25 +131,18 @@ def list_candidates(max_candidates=50):
 
         dataset_id = dataset_dir.name
 
-        X_path = dataset_dir / "X.parquet"
-        y_path = dataset_dir / "y.parquet"
-
-        if not X_path.exists() or not y_path.exists():
-            continue
-
-        X = pd.read_parquet(X_path)
-        y = pd.read_parquet(y_path)
+        X, y = datasets(dataset_dir)
+        if X is None or y is None:
+            continue  # no X/y files to load
 
         n_samples = len(X)
         n_features = len(X.columns)
 
-        # Infer task type from y
         if y.dtype in ['float64', 'float32']:
             task_type = "regression"
         else:
             task_type = "classification"
 
-        # Load metadata if exists
         meta_path = dataset_dir / "meta.pkl"
         if meta_path.exists():
             with open(meta_path, "rb") as f:
@@ -59,9 +162,8 @@ def list_candidates(max_candidates=50):
             name=name,
         )
 
-        stats.record(dataset_id, "local", name, results)
-
         if not hard_rules.all_passed(results):
+            stats.record(dataset_id, "local", name, results)
             continue
 
         candidates.append(CandidateInfo(
@@ -86,28 +188,21 @@ def list_candidates(max_candidates=50):
 def fetch(candidate):
     dataset_dir = DATASETS_DIR / candidate.id
 
-    X = pd.read_parquet(dataset_dir / "X.parquet")
-    y = pd.read_parquet(dataset_dir / "y.parquet")
-    if isinstance(y, pd.DataFrame):
-        y = y.iloc[:, 0]
+    X, y = datasets(dataset_dir)
 
-    data_results = hard_rules.run_data_checks(
-        X, y,
-        task_type=candidate.task_type
-    )
+    result, data_results = hard_rules.run_hard_rules(X, y, candidate)
+    if result is None:
+        return None, data_results
 
-    stats.record(candidate.id, "local", candidate.name, data_results)
-
-    if not hard_rules.all_passed(data_results):
-        return None
+    _, task_type = result
 
     return Dataset(
         X=X,
         y=y,
-        task_type=candidate.task_type,
+        task_type=task_type,
         id=candidate.id,
         source="local",
         name=candidate.name,
         metadata=candidate.metadata,
-    )
+    ), data_results
 

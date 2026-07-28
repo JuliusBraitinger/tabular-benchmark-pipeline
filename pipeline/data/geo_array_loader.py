@@ -32,7 +32,6 @@ from pipeline.config import (
 )
 from pipeline.data.base import CandidateInfo, Dataset
 from pipeline.hard_rules import runner as hard_rules
-from pipeline.hard_rules.base import RuleResult
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +135,26 @@ GEO_QUERIES = [
     f'{_QUERY_BASE} AND ("prognosis"[All Fields])',
     f'{_QUERY_BASE} AND ("subtype"[All Fields])',
     f'{_QUERY_BASE} AND ("differentiation"[All Fields])',
+]
+
+# non-genetic GEO data: proteomics
+_QUERY_BASE_PROTEOMICS = (
+    '"Homo sapiens"[ORGN] AND gse[ETYP]'
+    ' AND ("Protein expression profiling" OR "proteomics")[DataSet Type]'
+    ' AND 500:1000000[Number of Samples]'
+)
+GEO_QUERIES += [
+    f'{_QUERY_BASE_PROTEOMICS} AND ("disease"[All Fields] OR "cancer"[All Fields])',
+]
+
+# non-genetic GEO data: metabolomics
+_QUERY_BASE_METABOLOMICS = (
+    '"Homo sapiens"[ORGN] AND gse[ETYP]'
+    ' AND ("Metabolite profiling" OR "metabolomics")[DataSet Type]'
+    ' AND 500:1000000[Number of Samples]'
+)
+GEO_QUERIES += [
+    f'{_QUERY_BASE_METABOLOMICS} AND ("disease"[All Fields] OR "biomarker"[All Fields])',
 ]
 
 
@@ -335,27 +354,18 @@ def list_candidates(max_candidates=50):
                 logger.info("  Parsing %s (N=%d)...", accession, n_samples)
                 meta = _parse_geoparse_metadata(accession)
 
-                # if we couldn't figure out a task type, skip
+                # pre-filters (not tracked): no target contrast, or feature count out of range
                 if meta["task_type"] == "unknown":
                     logger.debug("  %s: no tumor/normal contrast, skipping", accession)
-                    fail = RuleResult(rule="pre-filter", passed=False, reason="no tumor/normal contrast")
-                    stats.record(accession, "geo_array", title, [fail])
                     continue
 
-                # feature count check (if we have it)
                 n_features = meta["n_features"]
                 if n_features is not None and n_features < MIN_FEATURES:
                     logger.debug("  %s: P=%d < %d, skipping", accession, n_features, MIN_FEATURES)
-                    reason = "P=" + str(n_features) + " < " + str(MIN_FEATURES)
-                    fail = RuleResult(rule="pre-filter", passed=False, reason=reason)
-                    stats.record(accession, "geo_array", title, [fail])
                     continue
                 if n_features is not None and n_features > MAX_FEATURES:
                     logger.debug("  %s: P=%d > %d, skipping (won't fit in RAM)",
                                  accession, n_features, MAX_FEATURES)
-                    reason = "P=" + str(n_features) + " > " + str(MAX_FEATURES) + " (RAM cap)"
-                    fail = RuleResult(rule="pre-filter", passed=False, reason=reason)
-                    stats.record(accession, "geo_array", title, [fail])
                     continue
 
                 # run the central metadata hard rules
@@ -367,8 +377,8 @@ def list_candidates(max_candidates=50):
                     source="geo_array",
                     name=title,
                 )
-                stats.record(accession, "geo_array", title, results)
                 if not hard_rules.all_passed(results):
+                    stats.record(accession, "geo_array", title, results, "biological")
                     continue
 
                 # passed everything -> build a CandidateInfo and add it
@@ -458,11 +468,11 @@ def fetch(candidate):
         gse = GEOparse.get_GEO(accession, destdir=CACHE_DIR, silent=True)
     except Exception as e:
         logger.warning("Failed to download %s: %s", accession, e)
-        return None
+        return None, []
 
     if not gse.gpls:
         logger.warning("%s: no platform found", accession)
-        return None
+        return None, []
 
     # Always try to derive labels from SOFT metadata (it's there even when values are stripped)
     # Build X as float32 row-by-row to keep peak memory ~half of what
@@ -542,10 +552,10 @@ def fetch(candidate):
             X = _expression_from_series_matrix(accession)
         except Exception as e:
             logger.warning("%s: Series Matrix fallback failed: %s", accession, e)
-            return None
+            return None, []
         if X is None or X.empty:
             logger.warning("%s: no expression data found", accession)
-            return None
+            return None, []
 
     # Filter out samples with missing/None labels
     labels = {k: v for k, v in labels.items() if v}
@@ -555,20 +565,16 @@ def fetch(candidate):
     shared = X.index.intersection(y.index)
     if len(shared) < 10:
         logger.warning("%s: only %d labeled samples", accession, len(shared))
-        return None
+        return None, []
 
     X = X.loc[shared]
     y = y.loc[shared]
 
-    data_results = hard_rules.run_data_checks(X, y, task_type=candidate.task_type)
-    failed = hard_rules.failed_rules(data_results)
-    if failed:
-        reasons = ", ".join(f"{r.rule}: {r.reason}" for r in failed)
-        logger.info("GEO %s discarded (data check): %s", accession, reasons)
-        return None
+    result, data_results = hard_rules.run_hard_rules(X, y, candidate)
+    if result is None:
+        return None, data_results
 
-    task_type = hard_rules.inferred_task_type(data_results) or candidate.task_type
-    stats.record(accession, "geo_array", candidate.name, data_results)
+    _, task_type = result
 
     logger.info(
         "GEO %s: loaded %d samples x %d features, task=%s",
@@ -588,4 +594,4 @@ def fetch(candidate):
             "url": candidate.url,
         },
         domain="biological",
-    )
+    ), data_results

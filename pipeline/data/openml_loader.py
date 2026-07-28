@@ -9,7 +9,9 @@ Flow: query API, filter by size, run hard rules, download.
 from __future__ import annotations
 
 import logging
+import os
 import time
+from pathlib import Path
 
 import openml
 import pandas as pd
@@ -17,9 +19,40 @@ import pandas as pd
 from pipeline.config import ACCEPTED_TASKS, MIN_FEATURES, MIN_ROWS  # imports thresholds from config.py
 from pipeline.data.base import CandidateInfo, Dataset, infer_domain
 from pipeline.hard_rules import runner as hard_rules  # hard rule checks
-from pipeline import stats  # for recording stats about the datasets we process
+from pipeline import stats
 
 logger = logging.getLogger(__name__)
+
+OPENML_DOMAIN_MAPPING = {
+    "computer_vision": {"image", "vision", "computer vision", "image data"},
+    "nlp": {"nlp", "text", "language", "sentiment"},
+    "time_series": {"time series", "timeseries", "temporal"},
+    "biological": {"biology", "biological", "genomics", "botany", "ecology"},
+    "bioedical": {"medical", "healthcare", "clinical"},
+    "chemical": {"chemical", "chemistry"},
+    "geoscience": {"geoscience", "geography"},
+}
+
+
+def get_openml_domain(did):
+    try:
+        ds = openml.datasets.get_dataset(did)
+        tags = {t.lower() for t in (ds.tag or [])}
+
+        for domain, keywords in OPENML_DOMAIN_MAPPING.items():
+            if tags & keywords:  # set intersection - any match
+                return domain
+    except Exception:
+        pass
+
+    return "general"
+
+
+# put openml's own download cache on scratch too when PIPELINE_DATA is set (cluster);
+# otherwise leave openml's default (~/.openml). Native OPENML_CACHE_DIR still wins if set.
+_data_root = os.environ.get("PIPELINE_DATA")
+if _data_root and not os.environ.get("OPENML_CACHE_DIR"):
+    openml.config.set_root_cache_directory(str(Path(_data_root) / "openml_cache"))
 
 
 def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
@@ -30,30 +63,32 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
 
     # Step 1: get ALL datasets from OpenML as a dataframe
     all_ds = openml.datasets.list_datasets(output_format="dataframe")
+    logger.info("OpenML: %d total", len(all_ds))
 
-    # Step 2: quick size filter - only keep datasets with enough rows and features
-    filtered = all_ds[
-        (all_ds["NumberOfFeatures"] >= MIN_FEATURES)
-        & (all_ds["NumberOfInstances"] >= MIN_ROWS)
-        & (all_ds["format"].str.lower() != "sparse_arff")  # sparse ARFF can't be parsed (openml+pandas2 bug)
-    ].copy()
-
-    logger.info("OpenML: %d total, %d after size filter", len(all_ds), len(filtered))
+    # reach the wide datasets instead of only the first few hundred by id, and drop
+    # sparse_arff up front (pandas-2 can't load it) so the scan window isn't wasted
+    # on datasets we'd only skip anyway
+    wide = all_ds[
+        (all_ds["NumberOfInstances"] >= MIN_ROWS)
+        & (all_ds["NumberOfFeatures"] >= MIN_FEATURES)
+        & (all_ds["format"].astype(str).str.lower() != "sparse_arff")
+    ]
+    logger.info("OpenML: %d loadable with N>=%d, P>=%d", len(wide), MIN_ROWS, MIN_FEATURES)
 
     candidates: list[CandidateInfo] = []
 
-    # Step 3: loop through filtered datasets and check hard rules
-    for _, row in filtered.head(max_candidates).iterrows():
-        did = int(row["did"])  # dataset ID on OpenML
+    for _, row in wide.head(max_candidates * 3).iterrows():  # check more to account for rejections
+        did = int(row["did"])
         name = str(row.get("name", ""))
         n_samples = int(row.get("NumberOfInstances", 0))
         n_features = int(row.get("NumberOfFeatures", 0))
         licence = str(row.get("licence", "") or "")
+        domain = get_openml_domain(did)
 
         # ask OpenML what kind of task this dataset is for (classification/regression)
         task_type = _fetch_task_type(did)
 
-        # Step 4: run metadata-level hard rules (A1 task type, A2 synthetic, A4 dimensions, A5 licence)
+        # Step 3: run metadata-level hard rules (A1 task type, A2 synthetic, A4 dimensions, A5 licence)
         results = hard_rules.run_metadata_checks(
             n_samples=n_samples,
             n_features=n_features,
@@ -64,16 +99,17 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
             metadata={"tags": []},
         )
 
-        stats.record(str(did), "openml", name, results)
-
-        # if any hard rule failed, skip this dataset
+        # if any hard rule failed, record it
         failed = hard_rules.failed_rules(results)
         if failed:
-            reasons = ", ".join(f"{r.rule}: {r.reason}" for r in failed)
-            logger.debug("OpenML %d (%s) discarded: %s", did, name, reasons)
+            stats.record(str(did), "openml", name, results, domain)
+            logger.debug("OpenML %d (%s) rejected", did, name)
             continue
 
-        # Step 5: passed all metadata checks, save as a candidate
+        # Step 4: passed all metadata checks, save as a candidate
+        if len(candidates) >= max_candidates:
+            break
+
         candidates.append(CandidateInfo(
             id=str(did),
             source="openml",
@@ -84,16 +120,17 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
             licence=licence,
             url=f"https://www.openml.org/d/{did}",
             metadata={},
-            domain=infer_domain(name),
+            domain=domain,
         ))
 
     logger.info("OpenML: %d candidates after metadata filters", len(candidates))
     return candidates
 
 
-def fetch(candidate: CandidateInfo) -> Dataset | None: #aktuell werden hier auch noch die harten regeln überprüft auslagern?
+def fetch(candidate: CandidateInfo) -> tuple[Dataset | None, list]:
     """Downloads the actual data for one candidate and runs data-level hard rules.
-    Returns a Dataset object if everything passes, None if it fails.
+    Returns (Dataset, data_results) where data_results are the hard rule checks.
+    Dataset is None if hard rules failed.
     """
     did = int(candidate.id)
     logger.info("Downloading OpenML dataset %d (%s)...", did, candidate.name)
@@ -108,35 +145,22 @@ def fetch(candidate: CandidateInfo) -> Dataset | None: #aktuell werden hier auch
         )
     except Exception as e:
         logger.warning("Failed to download OpenML %d: %s", did, e)
-        return None
+        return None, []
 
     if X is None or y is None:
         logger.warning("OpenML %d: no data returned", did)
-        return None
+        return None, []
 
-    # run data-level hard rules on the actual downloaded data.
-    # A1 = if metadata task was 'unknown', infer from target (sets details['inferred_task'])
-    # A3 = does the data have predictive signal (RandomForest cross-val)
-    # A4 = do the real dimensions still meet thresholds
-    data_results = hard_rules.run_data_checks(X, y, task_type=candidate.task_type)
-    stats.record(str(did), "openml", candidate.name, data_results)
+    result, data_results = hard_rules.run_hard_rules(X, y, candidate)
+    if result is None:
+        return None, data_results
 
-    failed = hard_rules.failed_rules(data_results)
-    if failed:
-        reasons = ", ".join(f"{r.rule}: {r.reason}" for r in failed)
-        logger.info("OpenML %d discarded (data check): %s", did, reasons)
-        return None
-
-    task_type = hard_rules.inferred_task_type(data_results) or candidate.task_type
-
+    _, task_type = result
     logger.info(
         "OpenML %d: loaded %d samples x %d features, task=%s",
         did, X.shape[0], X.shape[1], task_type,
     )
 
-    
-
-    # everything passed, build the final Dataset and return it
     return Dataset(
         id=f"OpenML-{did}",
         source="openml",
@@ -150,7 +174,7 @@ def fetch(candidate: CandidateInfo) -> Dataset | None: #aktuell werden hier auch
             "url": candidate.url,
         },
         domain=candidate.domain,
-    )
+    ), data_results
 
 
 def _fetch_task_type(did: int) -> str:

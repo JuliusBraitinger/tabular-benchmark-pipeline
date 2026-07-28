@@ -34,13 +34,12 @@ from pipeline.config import (
 )
 from pipeline.data.base import CandidateInfo, Dataset, infer_domain
 from pipeline.hard_rules import runner as hard_rules
-from pipeline.hard_rules.base import RuleResult
 
 from kaggle.api.kaggle_api_extended import KaggleApi  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-CACHE_DIR = Path("/tmp/kaggle_cache")
+CACHE_DIR = Path(os.environ.get("PIPELINE_CACHE", "/tmp")) / "kaggle_cache"
 CROISSANT_URL = "https://www.kaggle.com/datasets/{ref}/croissant/download"
 HTTP_TIMEOUT = 30
 NOT_TABULAR_KEYWORDS = ["image", "audio", "pictures","video", "text", "nlp", "language", "time series", "timeseries"]
@@ -77,7 +76,7 @@ def fetch(candidate: CandidateInfo):
             api.dataset_download_files(id, path=str(extract_dir), unzip=True)
         except Exception as e:
             logger.warning("Failed to download Kaggle %s: %s", id, e)
-            return None
+            return None, []
     # Look for csv OR parquet; pick the largest file (assumed main table).
     data_files = (
         list(extract_dir.rglob("*.csv"))
@@ -86,7 +85,7 @@ def fetch(candidate: CandidateInfo):
     )
     if not data_files:
         logger.warning("No CSV/Parquet files found in Kaggle %s", id)
-        return None
+        return None, []
     data_path = max(data_files, key=lambda p: p.stat().st_size)
 
     try:
@@ -96,7 +95,7 @@ def fetch(candidate: CandidateInfo):
             df = pd.read_csv(data_path, low_memory=False)
     except Exception as e:
         logger.warning("Failed to read %s for Kaggle %s: %s", data_path.name, id, e)
-        return None
+        return None, []
 
     # Step 2: detect target column
     target_col = candidate.metadata.get("target_col")
@@ -106,15 +105,11 @@ def fetch(candidate: CandidateInfo):
     X = df.drop(columns=[resolved])
 
     # Step 3: run hard rules
-    data_result = hard_rules.run_data_checks(X, y, task_type=candidate.task_type)
-    stats.record(id, "kaggle", candidate.name, data_result)
-    failed = hard_rules.failed_rules(data_result)
-    if failed:
-        logger.info("Kaggle %s failed hard rules: %s", id, failed)
-        return None
+    result, data_results = hard_rules.run_hard_rules(X, y, candidate)
+    if result is None:
+        return None, data_results
 
-    # A1 can refine task_type from the actual target (binary -> classification, etc.)
-    task_type = hard_rules.inferred_task_type(data_result) or candidate.task_type
+    _, task_type = result
 
     logger.info("Kaggle %s passed hard rules, loading dataset...", id)
 
@@ -131,7 +126,7 @@ def fetch(candidate: CandidateInfo):
             "url": f"https://www.kaggle.com/datasets/{id}",
         },
         domain=candidate.domain,
-    )
+    ), data_results
 
 
 
@@ -212,34 +207,22 @@ def list_candidates(max_candidates: int = 100):
 
             logger.info("  checking %s ...", id)
 
-            # Fetch Croissant export to get column names
             field_names = fetch_croissant_fields(id, auth=(username, key))
             if not field_names:
                 logger.info("    rejected: no croissant schema")
-                fail = RuleResult(rule="pre-filter", passed=False, reason="no croissant schema")
-                stats.record(id, "kaggle", title, [fail])
                 continue
 
             n_features = len(field_names)
             if n_features < MIN_FEATURES:
                 logger.info("    rejected: P=%d < %d", n_features, MIN_FEATURES)
-                fail = RuleResult(rule="pre-filter", passed=False,
-                                  reason=f"P={n_features} < {MIN_FEATURES}")
-                stats.record(id, "kaggle", title, [fail])
                 continue
             if n_features > MAX_FEATURES:
                 logger.info("    rejected: P=%d > %d (RAM cap)", n_features, MAX_FEATURES)
-                fail = RuleResult(rule="pre-filter", passed=False,
-                                  reason=f"P={n_features} > {MAX_FEATURES} (RAM cap)")
-                stats.record(id, "kaggle", title, [fail])
                 continue
 
             is_tabular, reason = looks_tabular(field_names, title)
             if not is_tabular:
                 logger.info("    rejected: not tabular - %s", reason)
-                fail = RuleResult(rule="pre-filter", passed=False,
-                                  reason=f"non-tabular: {reason}")
-                stats.record(id, "kaggle", title, [fail])
                 continue
 
             meta_results = hard_rules.run_metadata_checks(
@@ -250,11 +233,9 @@ def list_candidates(max_candidates: int = 100):
                 source="kaggle",
                 name=title,
             )
-            stats.record(id, "kaggle", title, meta_results)
             if not hard_rules.all_passed(meta_results):
-                reasons = ", ".join(f"{r.rule}: {r.reason}"
-                                    for r in hard_rules.failed_rules(meta_results))
-                logger.info("    rejected by hard rules: %s", reasons)
+                logger.info("    rejected by hard rules")
+                stats.record(id, "kaggle", title, meta_results)
                 continue
 
             logger.info("    ACCEPTED %s (P=%d, licence=%s)", id, n_features, license)
