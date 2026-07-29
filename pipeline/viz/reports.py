@@ -55,8 +55,10 @@ def evaluate_dataset(ds):
         keep = y.isin(y.value_counts().loc[lambda c: c >= CV_FOLDS].index)  # drop classes too rare for a fold
         X, y = X.loc[keep], y.loc[keep]
         y = pd.Series(LabelEncoder().fit_transform(y), index=X.index)  # re-encode so labels stay 0..K-1 contiguous
-    if len(X) < CV_FOLDS or (clf and y.nunique() < 2):
+    if len(X) < CV_FOLDS:
         raise ValueError(f"too little data to evaluate ({len(X)} rows)")
+    if clf and y.nunique() < 2:
+        raise ValueError(f"only {y.nunique()} class left after dropping rare ones")
     if len(X) > 10_000:  # cap huge datasets so CV stays quick
         idx = X.sample(10_000, random_state=42).index
         X, y = X.loc[idx], y.loc[idx]

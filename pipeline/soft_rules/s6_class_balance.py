@@ -15,6 +15,7 @@ def score(dataset):
 
     y = dataset.y
     counts = y.value_counts()
+    counts = counts[counts > 0]  # a categorical y lists unobserved levels as 0
     k = len(counts)
 
     if k < 2:
