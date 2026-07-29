@@ -521,6 +521,13 @@ def fetch(candidate):
             best_score = score
             best_char = char_name
 
+    # tumor/normal only works if BOTH show up in the study. an all-tumor cohort
+    # otherwise gets "tumor" for every sample -> constant target/ no viable dataset
+    all_text = " ".join(" ".join(g.metadata.get("characteristics_ch1", []) +
+                                 g.metadata.get("source_name_ch1", []))
+                        for g in gse.gsms.values())
+    use_tumor_normal = bool(TUMOR_PATTERN.search(all_text) and NORMAL_PATTERN.search(all_text))
+
     # Third pass: assign labels using tumor/normal regex OR best characteristic
     for gsm_id, gsm in gse.gsms.items():
         chars = gsm.metadata.get("characteristics_ch1", [])
@@ -528,9 +535,9 @@ def fetch(candidate):
         combined = " ".join(chars) + " " + source
 
         # Try tumor/normal first
-        if TUMOR_PATTERN.search(combined):
+        if use_tumor_normal and TUMOR_PATTERN.search(combined):
             labels[gsm_id] = "tumor"
-        elif NORMAL_PATTERN.search(combined):
+        elif use_tumor_normal and NORMAL_PATTERN.search(combined):
             labels[gsm_id] = "normal"
         # Fall back to best-scored characteristic
         elif best_char is not None:
