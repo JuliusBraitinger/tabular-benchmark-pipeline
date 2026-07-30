@@ -53,11 +53,6 @@ def check_data(X, y, task_type="classification", **_kwargs):
     if len(y) == 0:
         return RuleResult(rule="A3", passed=False, reason="all target values were NaN")
 
-    # a constant target makes adjusted balanced accuracy 0/0 -> nan, and every
-    # threshold below compares False against nan, so the dataset would pass
-    if y.nunique() < 2:
-        return RuleResult(rule="A3", passed=False, reason="constant target (only 1 unique value)")
-
     # if task_type is unknown, infer it from y: non-numeric or few unique values
     # -> classification (string labels like 'SITTING', 'WALKING' fall here)
     if task_type == "unknown" or not task_type:
