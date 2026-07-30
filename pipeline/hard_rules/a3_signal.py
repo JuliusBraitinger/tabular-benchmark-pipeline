@@ -138,10 +138,10 @@ def check_data(X, y, task_type="classification", **_kwargs):
         else:
             # RF found it easy but TabPFN didn't -- probably RF-specific, keep dataset
             passed = True
-            reason = "not trivial"
+            reason = f"not trivial (RF={real_score:.3f}, TabPFN={tabpfn_score:.3f})"
     else:
         passed = True
-        reason = "not trivial and not too weak"
+        reason = f"not trivial and not too weak ({metric_name}={real_score:.3f})"
 
     return RuleResult(
         rule="A3",

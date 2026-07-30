@@ -10,6 +10,6 @@ from pipeline.soft_rules.base import SoftRuleResult
 def score(dataset, pool=None):
     batch = dataset.metadata.get("batch")        # per-sample batch label saved by the loader
     if batch is None:
-        return SoftRuleResult("S5", 1.0, {"reason": "no batch info"})
+        return SoftRuleResult("S5", float("nan"), {"reason": "no batch info"})
     nmi = float(normalized_mutual_info_score(dataset.y, batch))   
     return SoftRuleResult("S5", 1.0 - nmi, {"nmi": round(nmi, 3)})
