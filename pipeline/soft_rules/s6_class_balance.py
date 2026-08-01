@@ -2,20 +2,23 @@
 # normalized shannon entropy of class distribution
 
 import numpy as np
+import pandas as pd
 from pipeline.soft_rules.base import SoftRuleResult
 
-def score(dataset):
-    # "classification" matches both "classification" and "supervised_classification"
-    if "classification" not in dataset.task_type:
-        return SoftRuleResult(
-            rule="S6",
-            score=float("nan"),
-            details={"skipped": "non-classification task", "task_type": dataset.task_type},
-        )
+REGRESSION_BINS = 10 #bins for regression targets (Yang et al. ICML 2021 "Delving into Deep Imbalanced Regression")
 
+
+def score(dataset):
     y = dataset.y
-    counts = y.value_counts()
-    counts = counts[counts > 0]  # a categorical y lists unobserved levels as 0
+    # regression targets get split into equal-interval bins first, as in Yang et al.
+    # (ICML 2021) "Delving into Deep Imbalanced Regression"
+    if "classification" in dataset.task_type:
+        counts = y.value_counts()
+        counts = counts[counts > 0]  # a categorical y lists unobserved levels as 0
+    else:
+        counts = pd.Series(np.histogram(y.astype(float), bins=REGRESSION_BINS)[0])
+
+    counts = counts[counts > 0]
     k = len(counts)
 
     if k < 2:
@@ -28,5 +31,5 @@ def score(dataset):
     return SoftRuleResult(
         rule="S6",
         score=float(balance),
-        details={"k": int(k), "entropy": float(entropy)},
+        details={"k": int(k), "entropy": float(entropy), "task_type": dataset.task_type},
     )
