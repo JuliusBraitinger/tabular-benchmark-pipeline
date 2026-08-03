@@ -10,12 +10,15 @@
 #
 # TODO: precision/recall for imbalanced datasets . Achtung random baseline
 from __future__ import annotations
-
+import os
 import numpy as np
 import pandas as pd
+from sklearn.feature_selection import VarianceThreshold
+from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import balanced_accuracy_score, make_scorer
 from sklearn.model_selection import cross_val_score, permutation_test_score
-from sklearn.preprocessing import LabelEncoder
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from tabpfn import TabPFNClassifier, TabPFNRegressor
 
 from pipeline.hard_rules.base import RuleResult
@@ -37,12 +40,10 @@ MAX_REG_SCORE = 0.98
 N_PERMUTATIONS = 100
 # TabPFN-2 limits (used to confirm trivial-signal verdicts from the RF)
 TABPFN_MAX_FEATURES = 500
-
-
-
+TABPFN_MAX_ROWS = 1000  # TabPFN refuses more than this on CPU
+DEVICE = os.getenv("TABPFN_DEVICE", "cpu")  # mps runs out of memory even on small data
+# Permutation test: if p < 0.05, the data has real signal.
 def check_data(X, y, task_type="classification", **_kwargs):
-    """Permutation test: if p < 0.05, the data has real signal."""
-
     # drop rows with missing target — LabelEncoder + permutation_test_score
     # both fail on NaN. Must happen before any inference / encoding.
     mask = pd.notna(y)
@@ -62,13 +63,12 @@ def check_data(X, y, task_type="classification", **_kwargs):
             task_type = "regression"
 
     # pick the right model and metric based on task type
+    model = make_reference_model(task_type)
     if "classification" in task_type:
-        model = make_reference_model(task_type)
         # adjusted=True -> chance-corrected (0 = random, 1 = perfect) regardless of #classes
         scoring = make_scorer(balanced_accuracy_score, adjusted=True)
         metric_name = "adj_balanced_accuracy"
     else:
-        model = make_reference_model(task_type)
         scoring = "r2"
         metric_name = "r2"
 
@@ -119,7 +119,7 @@ def check_data(X, y, task_type="classification", **_kwargs):
         max_score = MAX_REG_SCORE
 
     # checks in order: signal must be real, strong enough, but not trivial
-    tabpfn_score = None
+    ceiling_score = None
     if np.isnan(real_score):  # fail closed: nan loses every comparison below
         passed = False
         reason = f"{metric_name} undefined (nan)"
@@ -132,13 +132,15 @@ def check_data(X, y, task_type="classification", **_kwargs):
     else:
         # TabPFN decides trivial, not the gate model: the gate is too weak to reach
         # the ceiling on multiclass (a label copy only scored 0.41 at K=50)
-        tabpfn_score = tabpfn_scorer(X, y, task_type, scoring)
-        if tabpfn_score is not None and tabpfn_score > max_score:
+        ceiling_score = ceiling_scorer(X, y, task_type, scoring)
+        if ceiling_score is not None and ceiling_score > max_score:
             passed = False
-            reason = f"trivial: TabPFN={tabpfn_score:.3f} > {max_score}"
+            reason = f"trivial: ceiling={ceiling_score:.3f} > {max_score}"
         else:
-            passed = True  # None = TabPFN failed, keep the dataset
-            reason = f"not trivial and not too weak ({metric_name}={real_score:.3f})"
+            passed = True  # None = both models failed, keep the dataset
+            # say so out loud when nothing ran, else a dead ceiling looks like a pass
+            shown = "none ran" if ceiling_score is None else f"{ceiling_score:.3f}"
+            reason = f"not trivial (ceiling={shown}) and not too weak ({metric_name}={real_score:.3f})"
 
     return RuleResult(
         rule="A3",
@@ -149,27 +151,33 @@ def check_data(X, y, task_type="classification", **_kwargs):
             "real_score": real_score,
             "min_score": min_score,
             "max_score": max_score,
-            "tabpfn_score": tabpfn_score,
+            "ceiling_score": ceiling_score,
         },
     )
 
+def ceiling_scorer(X, y, task_type, scoring):
+    linear = make_pipeline(
+        VarianceThreshold(1e-8), StandardScaler(),
+        LogisticRegression(max_iter=1000) if "classification" in task_type else Ridge())
+    scores = [cross_val_score(linear, X, y, scoring=scoring, cv=make_cv(task_type)).mean()]
 
-def tabpfn_scorer(X, y, task_type, scoring):
-
-    #TODO maybe include tabpfnwide?
     if X.shape[1] > TABPFN_MAX_FEATURES:
         var_arr = np.nanvar(X.values, axis=0)
         top_idx = np.argpartition(-var_arr, TABPFN_MAX_FEATURES)[:TABPFN_MAX_FEATURES]
         X = X.iloc[:, top_idx]
 
+    if len(X) > TABPFN_MAX_ROWS:
+        idx = np.random.default_rng(42).choice(len(X), TABPFN_MAX_ROWS, replace=False) #pick random rows to avoid biasing the score
+        X, y = X.iloc[idx], np.asarray(y)[idx] #only work with these rows
+
     if "classification" in task_type:
-        model = TabPFNClassifier()
+        model = TabPFNClassifier(device=DEVICE)
     else:
-        model = TabPFNRegressor()
-    # None on failure: TabPFN runs on every candidate now, so an OOM would otherwise
-    # crash the fetch and lose the dataset entirely
-    try:
-        scores = cross_val_score(model, X, y, scoring=scoring, cv=make_cv(task_type))
+        model = TabPFNRegressor(device=DEVICE)
+    try: #try to score TabPFN, but it fails on some datasets (e.g. 0 variance)
+        scores.append(cross_val_score(model, X, y, scoring=scoring, cv=make_cv(task_type)).mean())
     except Exception:
-        return None
-    return float(scores.mean())
+        pass
+
+    scores = [s for s in scores if np.isfinite(s)] #filter out nan/inf scores, which happen on some datasets (e.g. 0 variance)
+    return float(max(scores)) if scores else None
