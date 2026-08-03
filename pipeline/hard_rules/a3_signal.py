@@ -129,19 +129,16 @@ def check_data(X, y, task_type="classification", **_kwargs):
     elif real_score < min_score:
         passed = False
         reason = f"signal too weak ({metric_name}={real_score:.3f} < {min_score})"
-    elif real_score > max_score:
-        # Tabpfn is exepensive -> only run it if RF has trivial signal
-        tabpfn_score = tabpfn_scorer(X, y, task_type, scoring)
-        if tabpfn_score > max_score:
-            passed = False
-            reason = f"trivial: RF={real_score:.3f}, TabPFN={tabpfn_score:.3f} both > {max_score}"
-        else:
-            # RF found it easy but TabPFN didn't -- probably RF-specific, keep dataset
-            passed = True
-            reason = f"not trivial (RF={real_score:.3f}, TabPFN={tabpfn_score:.3f})"
     else:
-        passed = True
-        reason = f"not trivial and not too weak ({metric_name}={real_score:.3f})"
+        # TabPFN decides trivial, not the gate model: the gate is too weak to reach
+        # the ceiling on multiclass (a label copy only scored 0.41 at K=50)
+        tabpfn_score = tabpfn_scorer(X, y, task_type, scoring)
+        if tabpfn_score is not None and tabpfn_score > max_score:
+            passed = False
+            reason = f"trivial: TabPFN={tabpfn_score:.3f} > {max_score}"
+        else:
+            passed = True  # None = TabPFN failed, keep the dataset
+            reason = f"not trivial and not too weak ({metric_name}={real_score:.3f})"
 
     return RuleResult(
         rule="A3",
@@ -169,5 +166,10 @@ def tabpfn_scorer(X, y, task_type, scoring):
         model = TabPFNClassifier()
     else:
         model = TabPFNRegressor()
-    scores = cross_val_score(model, X, y, scoring=scoring, cv=make_cv(task_type))
+    # None on failure: TabPFN runs on every candidate now, so an OOM would otherwise
+    # crash the fetch and lose the dataset entirely
+    try:
+        scores = cross_val_score(model, X, y, scoring=scoring, cv=make_cv(task_type))
+    except Exception:
+        return None
     return float(scores.mean())
