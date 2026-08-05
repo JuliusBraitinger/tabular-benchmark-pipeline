@@ -38,6 +38,7 @@ MIN_REG_SCORE = 0.05
 MAX_CLF_SCORE = 0.98  # adjusted balanced accuracy
 MAX_REG_SCORE = 0.98
 N_PERMUTATIONS = 100
+MIN_CLASS_SIZE = 20  # OpenML-CC18: "no class having less than 20 observations"
 # TabPFN-2 limits (used to confirm trivial-signal verdicts from the RF)
 TABPFN_MAX_FEATURES = 500
 TABPFN_MAX_ROWS = 1000  # TabPFN refuses more than this on CPU
@@ -61,6 +62,16 @@ def check_data(X, y, task_type="classification", **_kwargs):
             task_type = "classification"
         else:
             task_type = "regression"
+
+    # drop tiny classes (OpenML-CC18, Bischl et al.: no class under 20 samples).
+    if "classification" in task_type:
+        counts = y.value_counts()
+        big_classes = counts[counts >= MIN_CLASS_SIZE].index
+        y = y[y.isin(big_classes)]
+        X = X.loc[y.index]
+        if y.nunique() < 2:
+            return RuleResult(rule="A3", passed=False,
+                              reason=f"fewer than 2 classes with >={MIN_CLASS_SIZE} samples")
 
     # pick the right model and metric based on task type
     model = make_reference_model(task_type)
@@ -155,7 +166,7 @@ def check_data(X, y, task_type="classification", **_kwargs):
         },
     )
 
-def ceiling_scorer(X, y, task_type, scoring):
+def ceiling_scorer(X, y, task_type, scoring): #bias toward tabpfn 
     linear = make_pipeline(
         VarianceThreshold(1e-8), StandardScaler(),
         LogisticRegression(max_iter=1000) if "classification" in task_type else Ridge())
