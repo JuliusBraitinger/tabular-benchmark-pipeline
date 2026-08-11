@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import balanced_accuracy_score, make_scorer
@@ -35,8 +36,12 @@ P_VALUE_THRESHOLD = 0.05  # signal must be statistically distinguishable from ra
 MIN_CLF_SCORE = 0.10  # adjusted balanced accuracy (0 = chance, 1 = perfect)
 MIN_REG_SCORE = 0.05
 # dataset that scores near-perfect score -> reject it (trivial signal).
-MAX_CLF_SCORE = 0.98  # adjusted balanced accuracy
-MAX_REG_SCORE = 0.98
+# the ceiling uses AUROC not the floor's adjusted balanced accuracy
+#  a dataset can rank every sample correctly (AUROC 1.0) and still score  0.93 adba
+# now it chekcs ceiling also with AUROC
+CEILING_CLF_SCORING = "roc_auc_ovr"
+MAX_CLF_CEILING = 0.999
+MAX_REG_CEILING = 0.999
 N_PERMUTATIONS = 100
 MIN_CLASS_SIZE = 20  # OpenML-CC18: "no class having less than 20 observations"
 # TabPFN-2 limits (used to confirm trivial-signal verdicts from the RF)
@@ -124,10 +129,12 @@ def check_data(X, y, task_type="classification", **_kwargs):
     # pick the thresholds: classification uses balanced_acc, regression uses R2
     if "classification" in task_type:
         min_score = MIN_CLF_SCORE
-        max_score = MAX_CLF_SCORE
+        ceiling_max = MAX_CLF_CEILING
+        ceiling_scoring = CEILING_CLF_SCORING
     else:
         min_score = MIN_REG_SCORE
-        max_score = MAX_REG_SCORE
+        ceiling_max = MAX_REG_CEILING
+        ceiling_scoring = "r2"
 
     # checks in order: signal must be real, strong enough, but not trivial
     ceiling_score = None
@@ -143,14 +150,14 @@ def check_data(X, y, task_type="classification", **_kwargs):
     else:
         # TabPFN decides trivial, not the gate model: the gate is too weak to reach
         # the ceiling on multiclass (a label copy only scored 0.41 at K=50)
-        ceiling_score = ceiling_scorer(X, y, task_type, scoring)
-        if ceiling_score is not None and ceiling_score > max_score:
+        ceiling_score = ceiling_scorer(X, y, task_type, ceiling_scoring)
+        if ceiling_score is not None and ceiling_score > ceiling_max:
             passed = False
-            reason = f"trivial: ceiling={ceiling_score:.3f} > {max_score}"
+            reason = f"trivial: ceiling={ceiling_score:.4f} > {ceiling_max}"
         else:
-            passed = True  # None = both models failed, keep the dataset
+            passed = True  # None = every ceiling model failed, keep the dataset
             # say so out loud when nothing ran, else a dead ceiling looks like a pass
-            shown = "none ran" if ceiling_score is None else f"{ceiling_score:.3f}"
+            shown = "none ran" if ceiling_score is None else f"{ceiling_score:.4f}"
             reason = f"not trivial (ceiling={shown}) and not too weak ({metric_name}={real_score:.3f})"
 
     return RuleResult(
@@ -161,16 +168,27 @@ def check_data(X, y, task_type="classification", **_kwargs):
             "p_value": p_value,
             "real_score": real_score,
             "min_score": min_score,
-            "max_score": max_score,
+            "ceiling_max": ceiling_max,
+            "ceiling_metric": ceiling_scoring,  # not the same metric as real_score
             "ceiling_score": ceiling_score,
         },
     )
 
-def ceiling_scorer(X, y, task_type, scoring): #bias toward tabpfn 
+def forest(task_type):
+    kw = dict(n_estimators=200, max_depth=20, max_features="sqrt", random_state=42, n_jobs=-1)
+    if "classification" in task_type:
+        return RandomForestClassifier(**kw)
+    else:
+        return RandomForestRegressor(**kw)
+
+
+def ceiling_scorer(X, y, task_type, scoring): #bias toward tabpfn
     linear = make_pipeline(
         VarianceThreshold(1e-8), StandardScaler(),
         LogisticRegression(max_iter=1000) if "classification" in task_type else Ridge())
     scores = [cross_val_score(linear, X, y, scoring=scoring, cv=make_cv(task_type)).mean()]
+    scores.append(cross_val_score(forest(task_type), X, y,
+                                  scoring=scoring, cv=make_cv(task_type)).mean())
 
     if X.shape[1] > TABPFN_MAX_FEATURES:
         var_arr = np.nanvar(X.values, axis=0)
@@ -187,8 +205,8 @@ def ceiling_scorer(X, y, task_type, scoring): #bias toward tabpfn
         model = TabPFNRegressor(device=DEVICE)
     try: #try to score TabPFN, but it fails on some datasets (e.g. 0 variance)
         scores.append(cross_val_score(model, X, y, scoring=scoring, cv=make_cv(task_type)).mean())
-    except Exception:
-        pass
+    except Exception as err:
+        print(f"A3 ceiling: TabPFN failed - {err}")
 
     scores = [s for s in scores if np.isfinite(s)] #filter out nan/inf scores, which happen on some datasets (e.g. 0 variance)
     return float(max(scores)) if scores else None
