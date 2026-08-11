@@ -1,12 +1,22 @@
-# A3: does the dataset have real predictive signal, or is it just noise?
+# A3: is this dataset worth it?
+# A model actually needs to learn something from it -> does it have a signal?
+# Same argument as AMLB (Gijsbers et al., JMLR 25(101):1-65, 2024, section 5.1.1 (for citing)
+# there needs to be a signal + a difficulty range to benchmark on. A dataset that is too easy or too hard is not useful.
+# Three checks in order, a dataset has to pass all of them:
 #
-# Method (Ojala & Garriga 2010, "Permutation Tests for Studying Classifier
-# Performance", JMLR 11:1833-1863): train a random forest with cross-validation,
-# then re-score on 100 random label shuffles. p < 0.05 means the real score beats
-# the shuffled ones, so the signal is real. sklearn provides permutation_test_score.
+# 1. is the signal real? random forest with cross-validation, then score it again
+#    on 100 random label shuffles (Ojala & Garriga 2010, "Permutation Tests for Studying
+#    Classifier Performance", JMLR 11:1833-1863). p < 0.05 means the real score beat shuffeld one 
+# 2. is it strong enough? that same score has to clear a floor (hard coded), otherwise the signal is
+#    real but too small to benchmark on. -> ignore the dataset
+# 3. is it too easy? ceiling_scorer runs three stronger models (linear probe, random
+#    forest, TabPFN) and keeps the best one. if it beats a ceiling (hard coded), the dataset is trivial and not useful for benchmarking.
 #
-# Metric: classification uses adjusted balanced accuracy, regression uses R2
-# (both have chance = 0; see the threshold notes below).
+# The model in 1 and 2 are weak, the ones in 3 are strong
+# weak model is enough for showing signal -> strong only needed to show triviality
+# Flor and the ceiling do NOT use the same metric. floor is adjusted
+# balanced accuracy (classification) or R2 (regression) so chance sits at 0, the ceiling
+# is AUROC. Both are explained at the thresholds below.
 #
 # TODO: precision/recall for imbalanced datasets . Achtung random baseline
 from __future__ import annotations
@@ -182,13 +192,13 @@ def forest(task_type):
         return RandomForestRegressor(**kw)
 
 
-def ceiling_scorer(X, y, task_type, scoring): #bias toward tabpfn
+def ceiling_scorer(X, y, task_type, ceiling_scoring): #bias toward tabpfn
     linear = make_pipeline(
         VarianceThreshold(1e-8), StandardScaler(),
         LogisticRegression(max_iter=1000) if "classification" in task_type else Ridge())
-    scores = [cross_val_score(linear, X, y, scoring=scoring, cv=make_cv(task_type)).mean()]
+    scores = [cross_val_score(linear, X, y, scoring=ceiling_scoring, cv=make_cv(task_type)).mean()]
     scores.append(cross_val_score(forest(task_type), X, y,
-                                  scoring=scoring, cv=make_cv(task_type)).mean())
+                                  scoring=ceiling_scoring, cv=make_cv(task_type)).mean())
 
     if X.shape[1] > TABPFN_MAX_FEATURES:
         var_arr = np.nanvar(X.values, axis=0)
@@ -204,7 +214,7 @@ def ceiling_scorer(X, y, task_type, scoring): #bias toward tabpfn
     else:
         model = TabPFNRegressor(device=DEVICE)
     try: #try to score TabPFN, but it fails on some datasets (e.g. 0 variance)
-        scores.append(cross_val_score(model, X, y, scoring=scoring, cv=make_cv(task_type)).mean())
+        scores.append(cross_val_score(model, X, y, scoring=ceiling_scoring, cv=make_cv(task_type)).mean())
     except Exception as err:
         print(f"A3 ceiling: TabPFN failed - {err}")
 
