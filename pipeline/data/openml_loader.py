@@ -24,9 +24,6 @@ from pipeline import stats
 logger = logging.getLogger(__name__)
 
 OPENML_DOMAIN_MAPPING = {
-    "computer_vision": {"image", "vision", "computer vision", "image data"},
-    "nlp": {"nlp", "text", "language", "sentiment"},
-    "time_series": {"time series", "timeseries", "temporal"},
     "biological": {"biology", "biological", "genomics", "botany", "ecology"},
     "bioedical": {"medical", "healthcare", "clinical"},
     "chemical": {"chemical", "chemistry"},

@@ -3,6 +3,8 @@ It contains two main functions: run_metadata_checks and run_data_checks, which r
 and which are only possible with the actual downloaded data."""
 from __future__ import annotations
 
+import time
+
 import pandas as pd
 
 from pipeline.hard_rules import a1_task_type, a2_synthetic, a3_signal, a4_dimensions, a5_licence
@@ -54,8 +56,10 @@ def run_metadata_checks( #different rules need different data inputs -> runner n
     for _rule_name, check_fn in _METADATA_CHECKS: #actual check of the rules
         if _rule_name in skip:
             continue
+        start = time.perf_counter()
         result = check_fn(**kwargs) #**kwargs is the dictionary with the metada. It can pick the relevant information for each rule and ignore the rest.
         if result is not None:
+            result.details["runtime_s"] = time.perf_counter() - start #details is mutable even though RuleResult is frozen
             results.append(result)
             if not result.passed:
                 break  # no point checking remaining rules if one already failed
@@ -75,8 +79,10 @@ def run_data_checks(
     for _rule_name, check_fn in _DATA_CHECKS:
         if _rule_name in skip:
             continue
+        start = time.perf_counter()
         result = check_fn(**kwargs)
         if result is not None:
+            result.details["runtime_s"] = time.perf_counter() - start
             results.append(result)
             if not result.passed:
                 break  # fail fast, skip remaining checks

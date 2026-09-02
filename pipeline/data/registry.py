@@ -10,11 +10,17 @@ from __future__ import annotations
 
 import importlib
 import logging
+import time
 from functools import lru_cache
+
+import pandas as pd
 
 from pipeline.data import base  # Dataset + CandidateInfo dataclasses
 
 logger = logging.getLogger(__name__)
+
+# one row per loader call: source, phase ("scrape" or "fetch"), seconds
+_timings: list[dict] = []
 
 # source name -> module path. Imported lazily so an unused loader never loads
 # (e.g. kaggle authenticates on import and kills a headless run without creds).
@@ -61,11 +67,15 @@ def list_candidates(
         logger.info("Scraping %s...", source)
         # dispatch: call the right loader's list function (loader imported lazily here).
         # one source failing (network/DNS/import) must not abort the whole run -> skip it.
+        start = time.perf_counter()
         try:
             candidates = _loader(source).list_candidates(max_candidates=max_per_source)
         except Exception:
             logger.exception("scraping %s failed, skipping this source", source)
             continue
+        finally:  # runs on the continue too, so a failed scrape still gets timed
+            _timings.append({"source": source, "phase": "scrape",
+                             "seconds": time.perf_counter() - start})
         all_candidates.extend(candidates)
         logger.info("%s: %d candidates", source, len(candidates))
 
@@ -78,4 +88,49 @@ def fetch(candidate: base.CandidateInfo):
         logger.warning("Unknown source: %s", candidate.source)
         return None, []
     # dispatch: forward the candidate to the right loader (loader imported lazily here)
-    return _loader(candidate.source).fetch(candidate)
+    start = time.perf_counter()
+    try:
+        return _loader(candidate.source).fetch(candidate)
+    finally:  # a fetch that raises still costs time, so record it either way
+        _timings.append({"source": candidate.source, "phase": "fetch",
+                         "seconds": time.perf_counter() - start})
+
+
+def runtime_summary():
+    # mean seconds per loader call, keyed by "source/phase"
+    df = pd.DataFrame(_timings)
+    if df.empty:
+        return {}
+    means = df.groupby(["source", "phase"])["seconds"].mean()
+    return {f"{source}/{phase}": round(float(v), 2) for (source, phase), v in means.items()}
+
+
+def save_timings_csv(path="loader_timings.csv"):
+    df = pd.DataFrame(_timings)
+    df.to_csv(path, index=False)
+    return df
+
+
+def build_runtime_chart(csv_path="loader_timings.csv"): #bar chart of the mean runtime per loader
+    import plotly.graph_objects as go  # lazy so the pipeline still imports without plotly
+
+    df = pd.read_csv(csv_path)
+    if df.empty:  # no loader call was timed, nothing to plot
+        return None
+    fig = go.Figure()
+    for phase, color in (("scrape", "#4C78A8"), ("fetch", "#F58518")):
+        sub = df[df["phase"] == phase]
+        if sub.empty:
+            continue
+        m = sub.groupby("source")["seconds"].agg(["mean", "count"])
+        fig.add_bar(name=phase, x=list(m.index), y=list(m["mean"]), marker_color=color,
+                    text=[f"{v:.1f}s  n={n}" for v, n in zip(m["mean"], m["count"])],
+                    textposition="outside")
+
+    fig.update_layout(
+        barmode="group", title_text="Loader runtime (mean seconds per call)",
+        yaxis_title="seconds", font_size=13,
+        width=1000, height=500, margin=dict(l=20, r=20, t=50, b=20),
+    )
+    fig.write_html(csv_path.replace(".csv", ".html"))
+    return fig
