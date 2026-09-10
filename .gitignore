@@ -54,3 +54,7 @@ sanity_check.py
 *.html
 *.ipynb
 *.svg
+*.out
+*.err
+*.md
+test*.py
