@@ -1,4 +1,4 @@
-# S6 Class Balance (5 points)
+# S5 Class Balance (5 points)
 # normalized shannon entropy of class distribution
 
 import numpy as np
@@ -22,14 +22,14 @@ def score(dataset):
     k = len(counts)
 
     if k < 2:
-        return SoftRuleResult(rule="S6", score=0.0, details={"k": k})
+        return SoftRuleResult(rule="S5", score=0.0, details={"k": k})
 
     proportions = counts / counts.sum()
     entropy = -np.sum(proportions * np.log(proportions))
     balance = entropy / np.log(k)
 
     return SoftRuleResult(
-        rule="S6",
+        rule="S5",
         score=float(balance),
         details={"k": int(k), "entropy": float(entropy), "task_type": dataset.task_type},
     )

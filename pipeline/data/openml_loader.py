@@ -99,7 +99,7 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
         # if any hard rule failed, record it
         failed = hard_rules.failed_rules(results)
         if failed:
-            stats.record(str(did), "openml", name, results, domain)
+            stats.record(f"OpenML-{did}", "openml", name, results, domain)
             logger.debug("OpenML %d (%s) rejected", did, name)
             continue
 
@@ -108,7 +108,7 @@ def list_candidates(max_candidates: int = 100) -> list[CandidateInfo]:
             break
 
         candidates.append(CandidateInfo(
-            id=str(did),
+            id=f"OpenML-{did}",
             source="openml",
             name=name,
             n_samples=n_samples,
@@ -129,7 +129,7 @@ def fetch(candidate: CandidateInfo) -> tuple[Dataset | None, list]:
     Returns (Dataset, data_results) where data_results are the hard rule checks.
     Dataset is None if hard rules failed.
     """
-    did = int(candidate.id)
+    did = int(candidate.id.removeprefix("OpenML-"))
     logger.info("Downloading OpenML dataset %d (%s)...", did, candidate.name)
 
     # Step 1: download the actual data from OpenML
@@ -159,7 +159,7 @@ def fetch(candidate: CandidateInfo) -> tuple[Dataset | None, list]:
     )
 
     return Dataset(
-        id=f"OpenML-{did}",
+        id=candidate.id,
         source="openml",
         name=candidate.name,
         X=X,

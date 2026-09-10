@@ -1,4 +1,4 @@
-# S2 IID Assumption (10 points)
+# S2 Sample duplication (10 points)
 # duplicate rows, duplicate groups, duplicate fraction
 # can also be doen  with https://arxiv.org/pdf/2305.15696 if it doesnt work (knn iid detection)
 

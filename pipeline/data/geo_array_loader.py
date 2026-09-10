@@ -378,12 +378,12 @@ def list_candidates(max_candidates=50):
                     name=title,
                 )
                 if not hard_rules.all_passed(results):
-                    stats.record(accession, "geo_array", title, results, "biological")
+                    stats.record(f"GEO-{accession}", "geo_array", title, results, "biological")
                     continue
 
                 # passed everything -> build a CandidateInfo and add it
                 candidates.append(CandidateInfo(
-                    id=accession,
+                    id=f"GEO-{accession}",
                     source="geo_array",
                     name=title[:80],
                     n_samples=n_samples,
@@ -459,7 +459,7 @@ def fetch(candidate):
     embed expression values there, so falls back to downloading the
     Series Matrix file directly from NCBI FTP.
     """
-    accession = candidate.id
+    accession = candidate.id.removeprefix("GEO-")
     logger.info("Downloading GEO %s...", accession)
 
     os.makedirs(CACHE_DIR, exist_ok=True)
@@ -589,7 +589,7 @@ def fetch(candidate):
     )
 
     return Dataset(
-        id=f"GEO-{accession}",
+        id=candidate.id,
         source="geo_array",
         name=candidate.name,
         X=X,
