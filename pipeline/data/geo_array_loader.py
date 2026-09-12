@@ -8,12 +8,12 @@ This is a POC: focuses on tumor vs normal classification studies, which are
 common in GEO and useful for biomedical ML benchmarks.
 """
 
-#TODO implement parallelization for the GEO requeuts for faster candidate listing -> bottleneck
-#right now code is waiting all the time for answer of GEO request while doing nothing
 import logging
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
+from itertools import islice
 
 import GEOparse
 import numpy as np
@@ -23,10 +23,8 @@ from Bio import Entrez
 from pipeline import stats
 
 from pipeline.config import (
-    ENTREZ_BASE_URL,
     ENTREZ_EMAIL,
     MAX_FEATURES,
-    MIN_FEATURES,
     NCBI_API_KEY,
     REQUEST_DELAY,
 )
@@ -46,6 +44,10 @@ if NCBI_API_KEY:
 # doing the expensive GEOparse download. Studies with 50-999 samples will
 # still be parsed here, and then rejected later by the A4 hard rule.
 MIN_SAMPLES = 500  # GEO studies are typically smaller
+
+# how many SOFT files to download at once. The scrape is network-bound, one study
+# takes ~1 min, so this sets the speedup. Lower it if NCBI starts refusing connections.
+DOWNLOAD_WORKERS = 8
 
 # where we cache GEOparse downloads so we don't re-download the same GSE
 CACHE_DIR = os.path.join(os.environ.get("PIPELINE_CACHE", "/tmp"), "geoparse_cache")
@@ -75,369 +77,294 @@ METADATA_KEYWORDS = [
     "sample.id", "id", "name", "donor", "patient", "individual",
 ]
 
-
-def _score_characteristic(char_name: str, values: list[str]) -> float:
-    """Score how good a characteristic is as a classification target.
-
-    Good targets have 2-50 unique values, balanced distribution, high coverage,
-    and phenotype-like names (not metadata like age/batch).
-    """
-    if not values or not char_name:
-        return 0.0
-
-    # Count unique non-empty values
-    unique_vals = [v for v in values if v and str(v).strip()]
-    n_unique = len(set(unique_vals))
-
-    # Outside the sweet spot for classification
-    if n_unique < 2 or n_unique > 50:
-        return 0.0
-
-    # Balance: penalize imbalanced classes (e.g., 95% class A, 5% class B)
-    if len(unique_vals) > 0:
-        counts = pd.Series(unique_vals).value_counts()
-        balance = counts.min() / counts.max() if len(counts) > 0 else 0
-    else:
-        balance = 0
-
-    # Coverage: what % of samples have this characteristic
-    coverage = len(unique_vals) / len(values) if len(values) > 0 else 0
-
-    # Base score combines unique values, balance, and coverage
-    base_score = n_unique * balance * coverage
-
-    # Boost phenotype-like characteristics
-    char_lower = char_name.lower()
-    if any(kw in char_lower for kw in PHENOTYPE_KEYWORDS):
-        base_score *= 2.0
-
-    # Penalize metadata-like characteristics
-    if any(kw in char_lower for kw in METADATA_KEYWORDS):
-        base_score *= 0.1
-
-    return base_score
+MIN_CLASSES, MAX_CLASSES = 2, 50
 
 
 # GEO search queries (we loop over all of them and combine the results).
-# Each query filters for human microarray studies large enough to satisfy
-# the A4 hard rule (N>=500). We try several topical contrast pairs to get
-# enough variety; duplicates across queries are dropped via the `seen` set.
-_QUERY_BASE = (
-    '"Homo sapiens"[ORGN] AND gse[ETYP]'
-    ' AND "Expression profiling by array"[DataSet Type]'
-    ' AND 500:1000000[Number of Samples]'
-)
-GEO_QUERIES = [
-    f'{_QUERY_BASE} AND ("tumor"[All Fields] AND "normal"[All Fields])',
-    f'{_QUERY_BASE} AND ("cancer"[All Fields] AND "control"[All Fields])',
-    f'{_QUERY_BASE} AND ("disease"[All Fields] AND "healthy"[All Fields])',
-    f'{_QUERY_BASE} AND ("survival"[All Fields])',
-    f'{_QUERY_BASE} AND ("prognosis"[All Fields])',
-    f'{_QUERY_BASE} AND ("subtype"[All Fields])',
-    f'{_QUERY_BASE} AND ("differentiation"[All Fields])',
-]
+# Each query filters for human studies large enough to satisfy the A4 hard
+# rule (N>=500). We try several topical contrast pairs to get enough variety;
+# duplicates across queries are dropped inside search_studies().
+def geo_query(data_type, topic):
+    return ('"Homo sapiens"[ORGN] AND gse[ETYP]'
+            f' AND {data_type}[DataSet Type]'
+            ' AND 500:1000000[Number of Samples]'
+            f' AND {topic}')
 
-# non-genetic GEO data: proteomics
-_QUERY_BASE_PROTEOMICS = (
-    '"Homo sapiens"[ORGN] AND gse[ETYP]'
-    ' AND ("Protein expression profiling" OR "proteomics")[DataSet Type]'
-    ' AND 500:1000000[Number of Samples]'
-)
-GEO_QUERIES += [
-    f'{_QUERY_BASE_PROTEOMICS} AND ("disease"[All Fields] OR "cancer"[All Fields])',
-]
 
-# non-genetic GEO data: metabolomics
-_QUERY_BASE_METABOLOMICS = (
-    '"Homo sapiens"[ORGN] AND gse[ETYP]'
-    ' AND ("Metabolite profiling" OR "metabolomics")[DataSet Type]'
-    ' AND 500:1000000[Number of Samples]'
-)
-GEO_QUERIES += [
-    f'{_QUERY_BASE_METABOLOMICS} AND ("disease"[All Fields] OR "biomarker"[All Fields])',
+GEO_QUERIES = [geo_query('"Expression profiling by array"', topic) for topic in (
+    '("tumor"[All Fields] AND "normal"[All Fields])',
+    '("cancer"[All Fields] AND "control"[All Fields])',
+    '("disease"[All Fields] AND "healthy"[All Fields])',
+    '("survival"[All Fields])',
+    '("prognosis"[All Fields])',
+    '("subtype"[All Fields])',
+    '("differentiation"[All Fields])',
+)] + [
+    # non-genetic GEO data: proteomics and metabolomics
+    geo_query('("Protein expression profiling" OR "proteomics")',
+              '("disease"[All Fields] OR "cancer"[All Fields])'),
+    geo_query('("Metabolite profiling" OR "metabolomics")',
+              '("disease"[All Fields] OR "biomarker"[All Fields])'),
 ]
 
 
-# Entrez wrappers.
-# Entrez is NCBI's search API. We use it to find GEO study IDs (UIDs) and
-# then fetch their summary metadata before downloading the full thing.
+# ====== sample metadata: characteristics -> a classification target ======
 
 
-def _esearch(query, retmax=2000):
-    """Search GEO via Entrez. Returns a list of UIDs (study IDs)."""
+def collect_characteristics(gse):
+    # walk every sample (GSM) and split its "key: value" characteristic lines.
+    # returns the per-sample view (first value of each key wins) and, for scoring,
+    # every value seen per key across the study.
+    per_sample = {}
+    values = {}
+    for gsm_id, gsm in gse.gsms.items():
+        per_sample[gsm_id] = {}
+        for line in gsm.metadata.get("characteristics_ch1", []):
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            key, value = key.strip().lower(), value.strip()
+            per_sample[gsm_id].setdefault(key, value)
+            values.setdefault(key, []).append(value)
+    return per_sample, values
+
+
+def score_characteristic(name, values):
+    # Score how good a characteristic is as a classification target.
+    # Good targets have 2-50 unique values, balanced distribution, high coverage,
+    # and phenotype-like names (not metadata like age/batch).
+    filled = [v for v in values if v and str(v).strip()]
+    n_unique = len(set(filled))
+    if n_unique < MIN_CLASSES or n_unique > MAX_CLASSES:
+        return 0.0
+
+    counts = pd.Series(filled).value_counts()
+    balance = counts.min() / counts.max()          # penalize 95/5 splits
+    coverage = len(filled) / len(values)           # share of samples that have it
+    score = n_unique * balance * coverage
+
+    name = name.lower()
+    if any(kw in name for kw in PHENOTYPE_KEYWORDS):
+        score *= 2.0
+    if any(kw in name for kw in METADATA_KEYWORDS):
+        score *= 0.1
+    return score
+
+
+def best_target(values):
+    # highest-scoring characteristic, or None if nothing scores above zero.
+    # ties keep the first one seen, which is the order GEO lists them in.
+    if not values:
+        return None
+    best = max(values, key=lambda name: score_characteristic(name, values[name]))
+    return best if score_characteristic(best, values[best]) > 0 else None
+
+
+def has_tumor_and_normal(gse):
+    # tumor/normal only works if BOTH show up in the study. an all-tumor cohort
+    # otherwise gets "tumor" for every sample -> constant target/ no viable dataset
+    text = " ".join(" ".join(gsm.metadata.get("characteristics_ch1", [])
+                             + gsm.metadata.get("source_name_ch1", []))
+                    for gsm in gse.gsms.values())
+    return bool(TUMOR_PATTERN.search(text) and NORMAL_PATTERN.search(text))
+
+
+def sample_labels(gse, per_sample, target):
+    # one label per sample: tumor/normal regex first, else the best characteristic
+    tumor_normal = has_tumor_and_normal(gse)
+    labels = {}
+    for gsm_id, gsm in gse.gsms.items():
+        text = " ".join(gsm.metadata.get("characteristics_ch1", [])
+                        + gsm.metadata.get("source_name_ch1", []))
+        if tumor_normal and TUMOR_PATTERN.search(text):
+            labels[gsm_id] = "tumor"
+        elif tumor_normal and NORMAL_PATTERN.search(text):
+            labels[gsm_id] = "normal"
+        elif target and per_sample[gsm_id].get(target):
+            labels[gsm_id] = per_sample[gsm_id][target]
+    return labels
+
+
+# ====== Entrez search + GEOparse metadata (the slow part) ======
+
+
+def esearch(query, retmax=2000):
+    # search GEO via Entrez, returns a list of UIDs (study IDs)
     handle = Entrez.esearch(db="gds", term=query, retmax=retmax, usehistory="y")
     record = Entrez.read(handle)
     handle.close()
     return record["IdList"]
 
 
-def _esummary_batch(uids):
-    """Fetch summary records for a batch of UIDs. Returns a list of dicts."""
+def esummary(uids):
+    # summary records for a batch of UIDs
     handle = Entrez.esummary(db="gds", id=",".join(uids), retmode="xml")
     results = Entrez.read(handle)
     handle.close()
     return results
 
 
-# helper to clean up sample labels before comparing them
-
-def _normalize_label(raw_label):
-    """takes a raw label string and normalizes it for comparison."""
-    label = raw_label.strip()
-    label = label.lower()
-    label = label.replace(" ", "_")
-    # remove duplicates from label list
-    parts = label.split(",")
-    unique = []
-    for p in parts:
-        if p not in unique:
-            unique.append(p)
-    label = ",".join(unique)
-    # if label is empty after cleaning, use "unknown"
-    if label == "":
-        label = "unknown"
-    return label
-
-
-# metadata extraction via GEOparse (the slow part)
-
-
-def _parse_geoparse_metadata(accession):
-    """Use GEOparse to pull platform info, feature count, and tumor/normal labels.
-
-    This is the expensive call (it actually downloads the metadata file).
-    """
-    # start with default values, fill in what we can find
-    result = {
-        "task_type": "unknown",
-        "n_classes": None,
-        "class_labels": "",
-        "platform": "",
-        "n_features": None,
-    }
-
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    try:
-        gse = GEOparse.get_GEO(accession, destdir=CACHE_DIR, silent=True)
-    except Exception as e:
-        logger.debug("GEOparse failed for %s: %s", accession, e)
-        return result
-
-    # platform + feature count come from the GPL (GEO Platform) table.
-    # a study can have multiple platforms; we just take the first one.
-    if gse.gpls:
-        gpl_name = list(gse.gpls.keys())[0]
-        result["platform"] = gpl_name
-        gpl = gse.gpls[gpl_name]
-        if gpl.table is not None and not gpl.table.empty:
-            result["n_features"] = len(gpl.table)
-
-    # walk through every sample (GSM) and collect characteristics
-    tumor_count = 0
-    normal_count = 0
-    all_characteristics = {}  # char_name -> [values from all samples]
-
-    for gsm in gse.gsms.values():
-        chars = gsm.metadata.get("characteristics_ch1", [])
-        source = " ".join(gsm.metadata.get("source_name_ch1", []))
-        combined = " ".join(chars) + " " + source
-
-        # regex hit for tumor or normal?
-        if TUMOR_PATTERN.search(combined):
-            tumor_count += 1
-        if NORMAL_PATTERN.search(combined):
-            normal_count += 1
-
-        # Parse characteristics into key:value pairs
-        for char in chars:
-            if ":" in char:
-                key, val = char.split(":", 1)
-                key = key.strip().lower()
-                val = val.strip()
-                if key not in all_characteristics:
-                    all_characteristics[key] = []
-                all_characteristics[key].append(val)
-
-    # Try tumor/normal first
-    if tumor_count > 0 and normal_count > 0:
-        result["task_type"] = "classification"
-        result["n_classes"] = 2
-        result["class_labels"] = "normal, tumor"
-    else:
-        # Score all characteristics and pick the best one
-        best_char = None
-        best_score = 0.0
-        best_values = []
-        for char_name, values in all_characteristics.items():
-            score = _score_characteristic(char_name, values)
-            if score > best_score:
-                best_score = score
-                best_char = char_name
-                best_values = values
-
-        if best_char is not None and len(best_values) > 0:
-            unique_vals = set(v for v in best_values if v)
-            if 2 <= len(unique_vals) <= 50:
-                result["task_type"] = "classification"
-                result["n_classes"] = len(unique_vals)
-                result["class_labels"] = ", ".join(sorted(unique_vals)[:20])
-
-    return result
-
-
-# ====== public entry points (list_candidates + fetch) ======
-
-
-def list_candidates(max_candidates=50):
-    """Search GEO for microarray expression datasets with tumor/normal contrast.
-
-    Flow:
-      1. Run each Entrez search query -> get lots of UIDs
-      2. Fetch summaries in batches (fast, metadata only)
-      3. Pre-filter by sample count (cheap)
-      4. For survivors: GEOparse download (expensive) to get detailed metadata
-      5. Run hard rule checks; if they pass, build a CandidateInfo
-    """
-    logger.info("Searching GEO for microarray expression datasets...")
-    seen = set()           # GSE accessions we've already processed (avoid duplicates across queries)
-    candidates = []
-
-    # loop over each search query
+def search_studies():
+    # every unique GSE the queries return, as (accession, title, n_samples).
+    # a generator, so the caller stops it early instead of running all queries.
+    seen = set()
     for query in GEO_QUERIES:
-        if len(candidates) >= max_candidates:
-            break
-
         logger.info("  Query: %s...", query[:70])
         try:
-            uids = _esearch(query, retmax=2000)
+            uids = esearch(query)
         except Exception as e:
             logger.warning("  Search failed: %s", e)
             continue
-
         logger.info("  %d hits", len(uids))
 
         # fetch summaries in batches of 100 to stay under Entrez rate limits
         for i in range(0, len(uids), 100):
-            if len(candidates) >= max_candidates:
-                break
-
-            batch = uids[i:i + 100]
             try:
-                summaries = _esummary_batch(batch)
+                summaries = esummary(uids[i:i + 100])
             except Exception as e:
                 logger.warning("  Summary batch failed: %s", e)
                 continue
-
-            # process each summary in this batch
             for record in summaries:
-                if len(candidates) >= max_candidates:
-                    break
-
-                # GSE = GEO Series (one study). Skip anything that isn't a GSE or we've seen.
+                # GSE = GEO Series (one study). Skip anything else, and repeats.
                 accession = str(record.get("Accession", ""))
                 if not accession.startswith("GSE") or accession in seen:
                     continue
                 seen.add(accession)
 
-                # how many samples does this study have?
-                n_samples = int(record.get("n_samples", 0) or 0)
-
                 # cheap pre-filter: throw out tiny studies right away so we
                 # don't waste a GEOparse download on them. The REAL N>=1000
                 # check happens later inside hard_rules.run_metadata_checks (A4).
+                n_samples = int(record.get("n_samples", 0) or 0)
                 if n_samples < MIN_SAMPLES:
                     continue
-
-                title = str(record.get("title", ""))
-
-                # deep metadata via GEOparse (this is the slow call)
-                logger.info("  Parsing %s (N=%d)...", accession, n_samples)
-                meta = _parse_geoparse_metadata(accession)
-
-                # pre-filters (not tracked): no target contrast, or feature count out of range
-                if meta["task_type"] == "unknown":
-                    logger.debug("  %s: no tumor/normal contrast, skipping", accession)
-                    continue
-
-                n_features = meta["n_features"]
-                if n_features is not None and n_features < MIN_FEATURES:
-                    logger.debug("  %s: P=%d < %d, skipping", accession, n_features, MIN_FEATURES)
-                    continue
-                if n_features is not None and n_features > MAX_FEATURES:
-                    logger.debug("  %s: P=%d > %d, skipping (won't fit in RAM)",
-                                 accession, n_features, MAX_FEATURES)
-                    continue
-
-                # run the central metadata hard rules
-                results = hard_rules.run_metadata_checks(
-                    n_samples=n_samples,
-                    n_features=n_features,
-                    task_type=meta["task_type"],
-                    licence="public-domain",
-                    source="geo_array",
-                    name=title,
-                )
-                if not hard_rules.all_passed(results):
-                    stats.record(f"GEO-{accession}", "geo_array", title, results, "biological")
-                    continue
-
-                # passed everything -> build a CandidateInfo and add it
-                candidates.append(CandidateInfo(
-                    id=f"GEO-{accession}",
-                    source="geo_array",
-                    name=title[:80],
-                    n_samples=n_samples,
-                    n_features=n_features,
-                    task_type=meta["task_type"],
-                    licence="public-domain",
-                    url=f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={accession}",
-                    metadata={
-                        "platform": meta["platform"],
-                        "n_classes": meta["n_classes"],
-                        "class_labels": meta["class_labels"],
-                        "organism": "Homo sapiens",
-                    },
-                    domain="biological",
-                ))
-
-                logger.info(
-                    "  %s: PASS N=%d P=%s task=%s",
-                    accession, n_samples, n_features, meta["task_type"],
-                )
-                time.sleep(REQUEST_DELAY)
-
+                yield accession, str(record.get("title", "")), n_samples
             time.sleep(REQUEST_DELAY)
 
+
+def study_metadata(accession):
+    # GEOparse actually downloads the SOFT file here, so this is the expensive call.
+    # Returns None when the download fails or the study has no usable target.
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    try:
+        gse = GEOparse.get_GEO(accession, destdir=CACHE_DIR, silent=True)
+    except Exception as e:
+        logger.debug("GEOparse failed for %s: %s", accession, e)
+        return None
+
+    # platform + feature count come from the GPL (GEO Platform) table.
+    # a study can have multiple platforms; we just take the first one.
+    platform, n_features = "", None
+    if gse.gpls:
+        platform = list(gse.gpls.keys())[0]
+        table = gse.gpls[platform].table
+        if table is not None and not table.empty:
+            n_features = len(table)
+
+    _, values = collect_characteristics(gse)
+    if has_tumor_and_normal(gse):
+        class_labels = ["normal", "tumor"]
+    else:
+        target = best_target(values)
+        class_labels = sorted({v for v in values[target] if v}) if target else []
+        if not MIN_CLASSES <= len(class_labels) <= MAX_CLASSES:
+            class_labels = []
+
+    if not class_labels:
+        return None
+    return {
+        "platform": platform,
+        "n_features": n_features,
+        "n_classes": len(class_labels),
+        "class_labels": ", ".join(class_labels[:20]),
+    }
+
+
+# ====== public entry points (list_candidates + fetch) ======
+
+
+def check_study(accession, title, n_samples, meta):
+    # metadata hard rules for one scraped study, returns a CandidateInfo or None
+    if meta is None:
+        logger.debug("  %s: no usable target, skipping", accession)
+        return None
+
+    n_features = meta["n_features"]
+    if n_features is not None and n_features > MAX_FEATURES:
+        logger.debug("  %s: P=%d > %d, skipping (won't fit in RAM)",
+                     accession, n_features, MAX_FEATURES)
+        return None
+
+    results = hard_rules.run_metadata_checks(
+        n_samples=n_samples,
+        n_features=n_features,
+        task_type="classification",
+        licence="public-domain",
+        source="geo_array",
+        name=title,
+    )
+    if not hard_rules.all_passed(results):
+        stats.record(f"GEO-{accession}", "geo_array", title, results, "biological")
+        return None
+
+    logger.info("  %s: PASS N=%d P=%s task=classification", accession, n_samples, n_features)
+    return CandidateInfo(
+        id=f"GEO-{accession}",
+        source="geo_array",
+        name=title[:80],
+        n_samples=n_samples,
+        n_features=n_features,
+        task_type="classification",
+        licence="public-domain",
+        url=f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={accession}",
+        metadata={
+            "platform": meta["platform"],
+            "n_classes": meta["n_classes"],
+            "class_labels": meta["class_labels"],
+            "organism": "Homo sapiens",
+        },
+        domain="biological",
+    )
+
+
+def list_candidates(max_candidates=50):
+    # search GEO, then run the cheap hard rules on whatever survives the scrape
+    logger.info("Searching GEO for microarray expression datasets...")
+    candidates = []
+    studies = search_studies()
+
+    # the GEOparse download is the bottleneck (~1 min per study), so a batch of
+    # them runs at once and the rules are applied to the results in order.
+    # A batch downloads a few studies more than needed, which is the trade.
+    with ThreadPoolExecutor(max_workers=DOWNLOAD_WORKERS) as pool:
+        while len(candidates) < max_candidates:
+            batch = list(islice(studies, DOWNLOAD_WORKERS))
+            if not batch:
+                break  # no studies left to look at
+            metas = pool.map(lambda study: study_metadata(study[0]), batch)
+            candidates += [c for c in (check_study(*study, meta)
+                                       for study, meta in zip(batch, metas)) if c]
+
     logger.info("GEO microarray: %d candidates after metadata filters", len(candidates))
-    
-
-    return candidates
+    return candidates[:max_candidates]
 
 
-def _series_matrix_url(accession):
-    """Build the NCBI FTP URL for {accession}_series_matrix.txt.gz.
-
-    GEO groups studies into sub-folders by accession prefix:
-        GSE12345  -> .../GSE12nnn/GSE12345/matrix/
-        GSE5      -> .../GSEnnn/GSE5/matrix/
-    """
+def series_matrix_url(accession):
+    # GEO groups studies into sub-folders by accession prefix:
+    #     GSE12345  -> .../GSE12nnn/GSE12345/matrix/
+    #     GSE5      -> .../GSEnnn/GSE5/matrix/
     num = accession[3:]  # strip "GSE"
-    folder_prefix = num[:-3] if len(num) > 3 else ""
-    folder = f"GSE{folder_prefix}nnn"
-    filename = f"{accession}_series_matrix.txt.gz"
-    return f"https://ftp.ncbi.nlm.nih.gov/geo/series/{folder}/{accession}/matrix/{filename}"
+    folder = f"GSE{num[:-3] if len(num) > 3 else ''}nnn"
+    return (f"https://ftp.ncbi.nlm.nih.gov/geo/series/{folder}/{accession}"
+            f"/matrix/{accession}_series_matrix.txt.gz")
 
 
-def _expression_from_series_matrix(accession):
-    """Download the Series Matrix file and parse the expression block.
-
-    `pd.read_csv(comment="!")` skips every header line (all start with `!`)
-    and the begin/end markers, leaving just the column header + data rows.
-    Returns probes x samples df, transposed below.
-    """
+def expression_from_series_matrix(accession):
+    # `pd.read_csv(comment="!")` skips every header line (all start with `!`)
+    # and the begin/end markers, leaving just the column header + data rows.
+    # Returns probes x samples, transposed below.
     cache_path = os.path.join(CACHE_DIR, f"{accession}_series_matrix.txt.gz")
     if not os.path.exists(cache_path):
-        url = _series_matrix_url(accession)
+        url = series_matrix_url(accession)
         logger.info("  Fetching %s", url)
         with requests.get(url, timeout=180, stream=True) as response:
             response.raise_for_status()
@@ -452,18 +379,36 @@ def _expression_from_series_matrix(accession):
     return df.T
 
 
-def fetch(candidate):
-    """Download GEO expression data + labels and run data-level hard rules.
+def expression_from_soft(gse):
+    # Build X as float32 row-by-row to keep peak memory ~half of what
+    # pd.concat(...).apply(pd.to_numeric) would use. Returns None when the
+    # SOFT file ships without per-sample values (common for large studies).
+    ref_index = None
+    arrays: list[np.ndarray] = []
+    sample_ids: list[str] = []
 
-    Tries per-GSM tables (from the SOFT file) first. Some studies don't
-    embed expression values there, so falls back to downloading the
-    Series Matrix file directly from NCBI FTP.
-    """
+    for gsm_id, gsm in gse.gsms.items():
+        table = gsm.table
+        if (table is None or table.empty
+                or "VALUE" not in table.columns or "ID_REF" not in table.columns):
+            continue
+        series = pd.to_numeric(table.set_index("ID_REF")["VALUE"], errors="coerce")
+        if ref_index is None:
+            ref_index = series.index
+        arrays.append(series.reindex(ref_index).to_numpy(dtype=np.float32, copy=False))
+        sample_ids.append(gsm_id)
+
+    if not arrays:
+        return None
+    return pd.DataFrame(np.vstack(arrays), index=sample_ids, columns=ref_index)
+
+
+def fetch(candidate):
+    # Download GEO expression data + labels and run data-level hard rules.
     accession = candidate.id.removeprefix("GEO-")
     logger.info("Downloading GEO %s...", accession)
 
     os.makedirs(CACHE_DIR, exist_ok=True)
-
     try:
         gse = GEOparse.get_GEO(accession, destdir=CACHE_DIR, silent=True)
     except Exception as e:
@@ -474,89 +419,15 @@ def fetch(candidate):
         logger.warning("%s: no platform found", accession)
         return None, []
 
-    # Always try to derive labels from SOFT metadata (it's there even when values are stripped)
-    # Build X as float32 row-by-row to keep peak memory ~half of what
-    # pd.concat(...).apply(pd.to_numeric) would use.
-    ref_index = None
-    sample_arrays: list[np.ndarray] = []
-    sample_ids: list[str] = []
-    labels: dict[str, str] = {}
+    # labels come from SOFT metadata, which is there even when the values are stripped
+    per_sample, values = collect_characteristics(gse)
+    y = pd.Series(sample_labels(gse, per_sample, best_target(values)), name="target")
 
-    # First pass: collect all characteristics and expression data
-    all_characteristics = {}  # char_name -> [values from all samples]
-
-    for gsm_id, gsm in gse.gsms.items():
-        table = gsm.table
-        if (table is not None and not table.empty
-                and "VALUE" in table.columns and "ID_REF" in table.columns):
-            series = pd.to_numeric(
-                table.set_index("ID_REF")["VALUE"], errors="coerce",
-            )
-            if ref_index is None:
-                ref_index = series.index
-            sample_arrays.append(
-                series.reindex(ref_index).to_numpy(dtype=np.float32, copy=False)
-            )
-            sample_ids.append(gsm_id)
-
-        chars = gsm.metadata.get("characteristics_ch1", [])
-        # Parse characteristics into key:value pairs
-        for char in chars:
-            if ":" in char:
-                key, val = char.split(":", 1)
-                key = key.strip().lower()
-                val = val.strip()
-                if key not in all_characteristics:
-                    all_characteristics[key] = []
-                all_characteristics[key].append(val)
-            else:
-                all_characteristics.setdefault("_unparsed", []).append(char)
-
-    # Second pass: score characteristics and pick the best one
-    best_char = None
-    best_score = 0.0
-    for char_name, values in all_characteristics.items():
-        score = _score_characteristic(char_name, values)
-        if score > best_score:
-            best_score = score
-            best_char = char_name
-
-    # tumor/normal only works if BOTH show up in the study. an all-tumor cohort
-    # otherwise gets "tumor" for every sample -> constant target/ no viable dataset
-    all_text = " ".join(" ".join(g.metadata.get("characteristics_ch1", []) +
-                                 g.metadata.get("source_name_ch1", []))
-                        for g in gse.gsms.values())
-    use_tumor_normal = bool(TUMOR_PATTERN.search(all_text) and NORMAL_PATTERN.search(all_text))
-
-    # Third pass: assign labels using tumor/normal regex OR best characteristic
-    for gsm_id, gsm in gse.gsms.items():
-        chars = gsm.metadata.get("characteristics_ch1", [])
-        source = " ".join(gsm.metadata.get("source_name_ch1", []))
-        combined = " ".join(chars) + " " + source
-
-        # Try tumor/normal first
-        if use_tumor_normal and TUMOR_PATTERN.search(combined):
-            labels[gsm_id] = "tumor"
-        elif use_tumor_normal and NORMAL_PATTERN.search(combined):
-            labels[gsm_id] = "normal"
-        # Fall back to best-scored characteristic
-        elif best_char is not None:
-            for char in chars:
-                if ":" in char:
-                    key, val = char.split(":", 1)
-                    if key.strip().lower() == best_char:
-                        labels[gsm_id] = val.strip()
-                        break
-
-    if sample_arrays:
-        X = pd.DataFrame(
-            np.vstack(sample_arrays), index=sample_ids, columns=ref_index,
-        )
-    else:
-        # SOFT file has no per-GSM tables; download the Series Matrix file instead
+    X = expression_from_soft(gse)
+    if X is None:
         logger.info("%s: per-GSM tables empty, falling back to Series Matrix file", accession)
         try:
-            X = _expression_from_series_matrix(accession)
+            X = expression_from_series_matrix(accession)
         except Exception as e:
             logger.warning("%s: Series Matrix fallback failed: %s", accession, e)
             return None, []
@@ -564,29 +435,19 @@ def fetch(candidate):
             logger.warning("%s: no expression data found", accession)
             return None, []
 
-    # Filter out samples with missing/None labels
-    labels = {k: v for k, v in labels.items() if v}
-
-    y = pd.Series(labels, name="target")
-
     shared = X.index.intersection(y.index)
     if len(shared) < 10:
         logger.warning("%s: only %d labeled samples", accession, len(shared))
         return None, []
-
-    X = X.loc[shared]
-    y = y.loc[shared]
+    X, y = X.loc[shared], y.loc[shared]
 
     result, data_results = hard_rules.run_hard_rules(X, y, candidate)
     if result is None:
         return None, data_results
-
     _, task_type = result
 
-    logger.info(
-        "GEO %s: loaded %d samples x %d features, task=%s",
-        accession, X.shape[0], X.shape[1], task_type,
-    )
+    logger.info("GEO %s: loaded %d samples x %d features, task=%s",
+                accession, X.shape[0], X.shape[1], task_type)
 
     return Dataset(
         id=candidate.id,
