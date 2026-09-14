@@ -1,4 +1,4 @@
-# Per-dataset evaluation report (Phase 5). Trains the shared RF on each accepted
+# Per-dataset evaluation report, run after the four phases. Trains the shared RF on each accepted
 # dataset with out-of-fold CV and writes a self-contained HTML per dataset plus
 # an aggregate metrics.csv. clf: acc/balanced/precision/recall/f1/auc; reg:
 # r2/rmse/mae. Characterisation only, not a gate.
@@ -55,8 +55,10 @@ def evaluate_dataset(ds):
         keep = y.isin(y.value_counts().loc[lambda c: c >= CV_FOLDS].index)  # drop classes too rare for a fold
         X, y = X.loc[keep], y.loc[keep]
         y = pd.Series(LabelEncoder().fit_transform(y), index=X.index)  # re-encode so labels stay 0..K-1 contiguous
-    if len(X) < CV_FOLDS or (clf and y.nunique() < 2):
+    if len(X) < CV_FOLDS:
         raise ValueError(f"too little data to evaluate ({len(X)} rows)")
+    if clf and y.nunique() < 2:
+        raise ValueError(f"only {y.nunique()} class left after dropping rare ones")
     if len(X) > 10_000:  # cap huge datasets so CV stays quick
         idx = X.sample(10_000, random_state=42).index
         X, y = X.loc[idx], y.loc[idx]
@@ -233,11 +235,11 @@ def stat_tile(label, value, sub=""):
 # short name + one-line "what it measures" per soft rule (higher score = better on all)
 SOFT_RULES = {
     "S1": ("Uniqueness", "distinct from the other datasets"),
-    "S2": ("IID", "no duplicate rows"),
+    "S2": ("Sample duplication", "no duplicate rows"),
     "S3": ("Data quality", "few missing / constant / outlier values"),
     "S4": ("Leakage", "no train/test target leakage"),
-    "S5": ("Batch effects", "target not confounded by batch"),
-    "S6": ("Class balance", "classes not too imbalanced"),
+    "S5": ("Class balance", "classes not too imbalanced"),
+    "S6": ("Batch effects", "target not confounded by batch"),
 }
 
 
@@ -301,7 +303,7 @@ def generate_reports(ds_dirs, load_dataset, results_dir="."):
     # all HTMLs go into one reports/ dir, each named after its dataset id
     reports_dir = Path(results_dir) / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
-    # per-dataset soft scores (phase 4) + final composite score (phase 6), if those ran
+    # per-dataset soft scores (phase 3) + final composite score (phase 4), if those ran
     soft_path = Path(results_dir) / "soft_stats.csv"
     score_path = Path(results_dir) / "critic_scores.csv"
     soft_df = pd.read_csv(soft_path, index_col=0) if soft_path.exists() else pd.DataFrame()

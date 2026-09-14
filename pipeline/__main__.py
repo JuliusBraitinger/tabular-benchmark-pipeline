@@ -128,7 +128,7 @@ def fetch_and_save(candidates: list) -> list[Path]:
 
 
 def run_soft_rules(saved_dirs: list[Path]) -> None:
-    log.info("=== Phase 4: running soft rules ===")
+    log.info("=== Phase 3: running soft rules ===")
 
     # compare S1 only within the same source
     # squashes everyone's uniqueness score to ~0. so bucket the fingerprints per source.
@@ -157,7 +157,7 @@ def run_final_scoring(soft_stats_path: str) -> None:
     # apply the frozen soft-rule weights to score every dataset and mark which ones pass.
     # the weights come from a separate one-off CRITIC calibration
     # (python -m pipeline.critic.critic) and are NOT re-derived on every run.
-    log.info("=== Phase 6: final scoring ===")
+    log.info("=== Phase 4: final scoring ===")
     from pipeline.config import WEIGHTS_PATH
     from pipeline.critic.critic import load_weights, compute_critic_scores
 
@@ -176,9 +176,9 @@ def run_final_scoring(soft_stats_path: str) -> None:
 def run_reports(saved_dirs: list[Path]) -> None:
     # per-dataset reports (characterisation, not a gate); skippable since it retrains a model each
     if os.environ.get("PIPELINE_SKIP_REPORTS"):
-        log.info("PIPELINE_SKIP_REPORTS set -- skipping Phase 5 reports")
+        log.info("PIPELINE_SKIP_REPORTS set -- skipping the reports")
         return
-    log.info("=== Phase 5: per-dataset reports ===")
+    log.info("=== per-dataset reports ===")
     from pipeline.viz.reports import generate_reports
     csv = generate_reports(saved_dirs, load_dataset, RESULTS_DIR)
     log.info("Wrote per-dataset report.html files + %s", csv)

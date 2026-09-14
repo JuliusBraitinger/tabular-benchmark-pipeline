@@ -17,25 +17,25 @@ against an AHP baseline with the CRITIC method.
 python -m pipeline      # runs pipeline/__main__.py
 ```
 
-`__main__.py` runs the curation as logged stages (labelled Phase 1, 2, 4, 5 in
-the code). Datasets are written to disk between stages, so only one is in memory
-at a time.
+`__main__.py` runs the curation as four logged phases. Datasets are written to
+disk between phases, so only one is in memory at a time. Per-dataset HTML
+reports run afterwards and are skippable via `PIPELINE_SKIP_REPORTS`.
 
 ```mermaid
 flowchart LR
   P1["Phase 1<br/>scrape + metadata rules<br/>A1 · A2 · A4 · A5"]
   P2["Phase 2<br/>fetch + data rules<br/>A1 · A2 · A3 · A4 + A6<br/>→ save to disk"]
-  P4["Phase 4<br/>soft rules<br/>S1–S6"]
-  P5["Phase 5<br/>per-dataset<br/>HTML reports"]
-  P1 --> P2 --> P4 --> P5
+  P3["Phase 3<br/>soft rules<br/>S1–S6"]
+  P4["Phase 4<br/>final scoring<br/>weights → composite"]
+  P1 --> P2 --> P3 --> P4
 ```
 
 | Phase | What happens | Output |
 |-------|--------------|--------|
 | 1. scrape | `registry.list_candidates()` polls every loader; each runs the cheap metadata hard rules | `CandidateInfo` list |
-| 2. fetch + save | `registry.fetch()` downloads each survivor and runs the data hard rules. `__main__` then applies A6 (cross-dataset duplicate) and writes `X.parquet`, `y.parquet`, `meta.pkl` under `data/datasets/{id}/`, then frees the RAM. Caps: `MAX_SAVED_DATASETS=200` total, `MAX_PER_SOURCE_SAVED=20` per source | `rule_stats.csv` |
-| 4. soft rules | every saved dataset is reloaded one at a time and scored S1–S6 (S1 first needs the pre-computed fingerprint pool) | `soft_stats.csv` |
-| 5. reports | per-dataset HTML evaluation report plus `metrics.csv` (skippable via `PIPELINE_SKIP_REPORTS`) | HTML, `metrics.csv` |
+| 2. fetch + save | `registry.fetch()` downloads each survivor and runs the data hard rules. `__main__` then applies A6 (cross-dataset duplicate) and writes `X.parquet`, `y.parquet`, `meta.pkl` under `data/datasets/{id}/`, then frees the RAM. Caps: `MAX_SAVED_DATASETS=200` total, `MAX_PER_SOURCE_SAVED=15` per source | `rule_stats.csv` |
+| 3. soft rules | every saved dataset is reloaded one at a time and scored S1–S6 (S1 first needs the pre-computed fingerprint pool) | `soft_stats.csv` |
+| 4. final scoring | the frozen soft-rule weights are applied to `soft_stats.csv`, giving each dataset a composite score out of 60 and a pass flag at `PASS_THRESHOLD` | `critic_scores.csv` |
 
 ## Module map
 
