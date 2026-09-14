@@ -53,3 +53,9 @@ sanity_check.py
 # Generated figures (plotly inlines ~4MB plotly.js per file)
 *.html
 *.ipynb
+
+# Generated thesis figures and run artifacts (not part of the pipeline)
+figures/
+results/
+.ipynb_checkpoints/
+WRITING.md
