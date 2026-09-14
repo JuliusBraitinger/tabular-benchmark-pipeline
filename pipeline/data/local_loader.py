@@ -1,7 +1,9 @@
-# Local loader: load datasets that are stored in data/datasets/{id}/
+# Local loader: load datasets a user staged themselves, one directory per dataset.
+# Deliberately NOT data/datasets, which is where the pipeline writes its own output.
 #takes csv and parquet files for X and y, and optional meta.pkl for metadata
 #TODO implement that you can choose which metadata column your target will be
 import logging
+import os
 import pandas as pd
 from pathlib import Path
 import pickle
@@ -13,7 +15,7 @@ from pipeline import stats
 logger = logging.getLogger(__name__)
 
 
-DATASETS_DIR = Path("data/datasets")
+DATASETS_DIR = Path(os.environ.get("LOCAL_DIR", "data/local"))
 
 
 def save_target(dataset_dir, y):
@@ -123,6 +125,10 @@ def datasets(dataset_dir):
 
 
 def list_candidates(max_candidates=50):
+    if not DATASETS_DIR.exists():
+        logger.info("no %s directory, so this source has nothing to load", DATASETS_DIR)
+        return []
+
     candidates = []
 
     for dataset_dir in sorted(DATASETS_DIR.iterdir()):

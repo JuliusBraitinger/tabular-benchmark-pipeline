@@ -36,6 +36,7 @@ can run on it. Source names are the keys of `_LOADER_MODULES` in
 | `PIPELINE_MAX_PER_SOURCE` | 90 | candidates scraped per source |
 | `PIPELINE_DATA` | `.` | where datasets and CSVs are written |
 | `PIPELINE_CACHE` | `/tmp` | where downloads are cached |
+| `LOCAL_DIR` | `data/local` | directory of your own datasets for the `local` source |
 | `PIPELINE_SKIP_REPORTS` | unset | set to anything to skip the HTML reports |
 
 ## Entry point
