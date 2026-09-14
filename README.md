@@ -11,6 +11,33 @@ Candidates are scraped from many sources, filtered by binary hard rules (A1–A6
 then scored by continuous soft rules (S1–S6). The soft-rule weights are checked
 against an AHP baseline with the CRITIC method.
 
+## Quickstart
+
+Needs Python 3.10 or newer.
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env            # then fill in ENTREZ_EMAIL
+
+PIPELINE_SOURCES=openml python -m pipeline
+```
+
+Start with one source. `python -m pipeline` with no `PIPELINE_SOURCES` scrapes
+every loader and takes hours, since it downloads each dataset before the rules
+can run on it. Source names are the keys of `_LOADER_MODULES` in
+`data/registry.py`, namely `openml`, `tcga`, `geo_array`, `geo_rnaseq`, `chembl`,
+`mgnify`, `cmd`, `plants`, `gp`, `uci` and `kaggle`.
+
+| Variable | Default | What it does |
+|----------|---------|--------------|
+| `ENTREZ_EMAIL` | none | required by NCBI for the GEO sources |
+| `NCBI_API_KEY` | none | optional, raises the Entrez rate limit |
+| `PIPELINE_SOURCES` | every source | comma-separated list to run |
+| `PIPELINE_MAX_PER_SOURCE` | 90 | candidates scraped per source |
+| `PIPELINE_DATA` | `.` | where datasets and CSVs are written |
+| `PIPELINE_CACHE` | `/tmp` | where downloads are cached |
+| `PIPELINE_SKIP_REPORTS` | unset | set to anything to skip the HTML reports |
+
 ## Entry point
 
 ```bash
