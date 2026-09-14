@@ -70,11 +70,11 @@ def list_candidates(max_candidates=50):
             skip=("A4",),
         )
         if not hard_rules.all_passed(results):
-            stats.record(acc, "geo_rnaseq", acc, results, "biological")
+            stats.record(f"GEO-{acc}", "geo_rnaseq", acc, results, "biological")
             continue
 
         candidates.append(CandidateInfo(
-        id=acc,
+        id=f"GEO-{acc}",
         source="geo_rnaseq",
         name=acc,
         n_samples=info.get("n_samples"),
@@ -97,7 +97,7 @@ def list_candidates(max_candidates=50):
 
 
 def fetch(candidate):
-    accessionId = candidate.id
+    accessionId = candidate.id.removeprefix("GEO-")
     folder = Path(candidate.metadata["folder"])
     target = candidate.metadata["target_column"]
 
@@ -126,7 +126,7 @@ def fetch(candidate):
         return None, results
 
     return Dataset(
-        id=f"GEO-{accessionId}",
+        id=candidate.id,
         source="geo_rnaseq",
         name=candidate.name,
         X=X,

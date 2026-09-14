@@ -65,14 +65,29 @@ def run_critic(score_matrix):
     critic_weights = pd.Series(0.0, index=RULES) # start every rule at 0
     critic_weights.loc[informative] = informativeness / total_info #only informative rules get a real weight; degenerates stay at 0
 
+    max_rule = informative[0] # rounding leftover lands on the biggest informative rule, never on a degenerate one
+    for rule in informative:
+        if critic_weights[rule] > critic_weights[max_rule]:
+            max_rule = rule
+
     critic_scores = {rule: int(round(critic_weights[rule] * TOTAL_POINTS)) for rule in RULES}
     point_diff = TOTAL_POINTS - sum(critic_scores.values())
     if point_diff != 0:
-        max_rule = informative[0] # rounding leftover lands on the biggest informative rule, never on a degenerate one
-        for rule in informative:
-            if critic_weights[rule] > critic_weights[max_rule]:
-                max_rule = rule
         critic_scores[max_rule] += point_diff
+
+    # AHP and CRITIC each sum to TOTAL_POINTS, so their blend does too before rounding.
+    # rounding the six rules separately can still lose or gain a point (59 on run 2270868),
+    # so the leftover goes to the same rule that absorbed it above.
+    final_scores = {}
+    for rule in RULES:
+        if rule in informative:
+            final_scores[rule] = round(AHP_PART * AHP_WEIGHTS.get(rule, 0)
+                                       + (1 - AHP_PART) * critic_scores[rule])
+        else: # degenerate rule: no CRITIC signal, fall back to AHP
+            final_scores[rule] = AHP_WEIGHTS.get(rule, 0)
+    final_diff = TOTAL_POINTS - sum(final_scores.values())
+    if final_diff != 0:
+        final_scores[max_rule] += final_diff
 
     results = []
     for rule in RULES:
@@ -82,12 +97,12 @@ def run_critic(score_matrix):
         if rule in informative:
             verdict = "DIVERGE" if delta > DIVERGENCE_THRESHOLD else "AGREE"
             # see Tzeng et al. and other AHP-CRITIC integration variants in the MCDM literature.
-            final = round(AHP_PART * ahp_points + (1 - AHP_PART) * crit_points)
+            final = final_scores[rule]
             stdv = float(standard_deviation[rule])
             info_val = float(informativeness[rule])
         else: # degenerate rule: no CRITIC signal, fall back to AHP
             verdict = "AGREE"
-            final = ahp_points
+            final = final_scores[rule]
             stdv = 0.0
             info_val = 0.0
         results.append(CRITICResults(

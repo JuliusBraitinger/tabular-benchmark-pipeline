@@ -12,11 +12,6 @@ from pipeline.soft_rules.s3_data_quality import top_variable_columns, MAX_FEATUR
 def per_feature_stat(X, y, task_type):
     # per-feature predictive stat in [0, 1]. 1.0 = uninformative (clean),
     # 0.0 = perfectly predictive of the target (suspicious for leakage).
-
-    # Skip if y has None values (can't be sorted)
-    if any(val is None for val in y):
-        return np.ones(X.shape[1])
-
     array = X.to_numpy(dtype=float, copy=False)
     col_means = np.nanmean(array, axis=0)
     array = np.where(np.isnan(array), col_means, array)
@@ -29,19 +24,23 @@ def per_feature_stat(X, y, task_type):
         ranks_x = ranks_x[mask]
         if len(y_array) == 0:
             return np.ones(X.shape[1])
-        classes, counts = np.unique(y_array, return_counts=True)
-        # most frequent class vs rest (one-vs-rest with majority as positive)
-        positive = classes[np.argmax(counts)]
-        y_bin = (y_array == positive).astype(int)
-        n_pos = int(y_bin.sum())
-        n_neg = len(y_bin) - n_pos
-        if n_pos == 0 or n_neg == 0:
+        classes = np.unique(y_array)
+        if len(classes) < 2:
             return np.ones(X.shape[1])  # only one class -> nothing to predict, treat as clean
-        # Mann-Whitney AUC per feature, vectorised over all columns.
-        sum_pos_ranks = np.sum(ranks_x[y_bin == 1], axis=0)
-        auc = (sum_pos_ranks - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
-        # both AUC=1 and AUC=0 mean the feature is fully predictive
-        return 2 * np.minimum(auc, 1 - auc)
+        # one-vs-rest for every class, keep the most predictive. only testing the
+        # majority class missed a leak on any other class: a column holding a
+        # 4-class label scored 0.72 (looks clean) instead of 0.07.
+        best = np.ones(X.shape[1])
+        for positive in classes:
+            y_bin = (y_array == positive).astype(int)
+            n_pos = int(y_bin.sum())
+            n_neg = len(y_bin) - n_pos
+            # Mann-Whitney AUC per feature, vectorised over all columns.
+            sum_pos_ranks = np.sum(ranks_x[y_bin == 1], axis=0)
+            auc = (sum_pos_ranks - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
+            # both AUC=1 and AUC=0 mean the feature is fully predictive
+            best = np.minimum(best, 2 * np.minimum(auc, 1 - auc))
+        return best
 
     # toDO regression
     if "regression" in task_type:

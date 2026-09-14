@@ -44,7 +44,7 @@ flowchart TD
   config["config.py<br/>thresholds · AHP weights · API keys · licence allow-list"]
   registry["data/registry.py<br/>dispatcher (routes by source string)"]
   base["data/base.py<br/>CandidateInfo · Dataset · DataSource protocol"]
-  loaders["12 loaders<br/>one module per source"]
+  loaders["13 loaders<br/>one module per source"]
   runner["hard_rules/runner.py<br/>metadata checks + data checks"]
   rules["A1 task · A2 synthetic · A3 signal<br/>A4 dims · A5 licence · A6 cross-dup"]
   soft["soft_rules/<br/>S1–S6 → SoftRuleResult"]
@@ -97,7 +97,7 @@ flowchart LR
 | Source | Loader | Access | Features | Target | Domain |
 |--------|--------|--------|----------|--------|--------|
 | `openml` | `openml_loader.py` | OpenML API | varies | predefined (skips `sparse_arff`) | general |
-| `tcga` | `tcga_loader.py` | GDC API | expression / miRNA / CNV | sample type (tumor/normal), `vital_status` fallback | biomedical |
+| `tcga` | `tcga_loader.py` | GDC API | expression / miRNA | sample type (tumor/normal), `vital_status` fallback | biomedical |
 | `geo_array` | `geo_array_loader.py` | Entrez + GEOparse | microarray probes | built from sample text (slow scrape) | biological |
 | `geo_rnaseq` | `geo_rnaseq_loader.py` | local Parquet (Nextflow export) | 29 607 genes (GRCh38) | classification column with most labels | biological |
 | `kaggle` | `kaggle_loader.py` | Kaggle API (+ Croissant) | varies | heuristic detection (needs `~/.kaggle` creds) | general |
@@ -157,11 +157,11 @@ in [0, 1] (1 = clean). The AHP point tiers are for display only.
 | Rule | Points | Implementation |
 |------|--------|----------------|
 | S1 Uniqueness | 10 | per-column moment fingerprint (mean/std/skew/kurt), cosine vs pool |
-| S2 IID | 10 | strict exact-duplicate rows on `(X \| y)` via row hashing |
+| S2 Sample duplication | 10 | strict exact-duplicate rows on `(X \| y)` via row hashing |
 | S3 Data Quality | 15 | composite: completeness, consistency, outliers (IsolationForest), constant features |
 | S4 Data Leakage | 20 | per-feature predictive-gap: worst vs median feature stat (Mann-Whitney / Spearman). Scores low when one feature sticks out far above the bulk (a leak), high when the signal is spread across features (biology) |
-| S5 Batch Effects | – | `1 − NMI(target, batch)`: flags a target that is just a technical batch relabelled. Needs a per-sample `batch` in metadata (mgnify persists the instrument), otherwise returns 1.0. It is near-constant across the benchmark, so CRITIC drops it |
-| S6 Class Balance | 5 | normalized Shannon entropy of the class distribution |
+| S5 Class Balance | 5 | normalized Shannon entropy of the class distribution |
+| S6 Batch Effects | – | `1 − NMI(target, batch)`: flags a target that is just a technical batch relabelled. Needs a per-sample `batch` in metadata (mgnify persists the instrument), otherwise returns 1.0. It is near-constant across the benchmark, so CRITIC drops it |
 | S7 Domain-QC | – | placeholder; too domain-specific to automate generically |
 
 S2's duplicate detection used to live inside S3 as a "uniqueness" sub-metric. It
@@ -281,9 +281,9 @@ boilerplate, and `rglob("X.parquet")` walks any depth, so kaggle's two-level
 ```python
 from pathlib import Path
 from pipeline.__main__ import load_dataset
-from pipeline.soft_rules import s2_iid
+from pipeline.soft_rules import s2_sample_duplication as s2
 
 for x_path in Path("data/datasets").rglob("X.parquet"):
     ds = load_dataset(x_path.parent)
-    print(ds.id, s2_iid.score(ds).score)
+    print(ds.id, s2.score(ds).score)
 ```

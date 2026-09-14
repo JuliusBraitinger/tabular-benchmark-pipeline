@@ -23,6 +23,8 @@ def record(dataset_id, source, name, rule_results, domain=None, url=""):
     # fill in pass/fail for each rule we got a result for
     for r in rule_results:
         row[r.rule.upper()] = "pass" if r.passed else "fail: " + r.reason
+        if "runtime_s" in r.details:  # seconds this rule spent on this dataset
+            row[r.rule.upper() + "_time"] = round(r.details["runtime_s"], 6)
 
     if not rule_results:
         row["status"] = "error"
@@ -40,6 +42,31 @@ def save_csv(path="rule_stats.csv"):
     df.to_csv(path, index=False)
     return df
 
+
+
+def runtime_summary(csv_path="rule_stats.csv"):
+    # mean seconds per rule invocation. no dedup by dataset_id (unlike the sankey): a rule that
+    # never ran on a row is NaN there, so each rule averages over the calls that actually happened
+    df = pd.read_csv(csv_path)
+    return {r: round(float(df[r + "_time"].mean()), 3)
+            for r in RULE_ORDER if r + "_time" in df.columns}
+
+
+def build_runtime_chart(csv_path="rule_stats.csv"): #bar chart of the mean runtime per hard rule
+    means = runtime_summary(csv_path)
+    labels = [f"{r} {RULE_NAME[r]}" for r in means]
+    values = list(means.values())
+
+    fig = go.Figure(go.Bar(
+        x=labels, y=values, marker_color="#4C78A8",
+        text=[f"{v:.2f}s" for v in values], textposition="outside",
+    )).update_layout(
+        title_text="Hard-rule runtime (mean seconds per dataset)",
+        yaxis_title="seconds", font_size=13,
+        width=900, height=500, margin=dict(l=20, r=20, t=50, b=20),
+    )
+    fig.write_html(csv_path.replace(".csv", "_runtime.html"))
+    return fig
 
 
 def build_sankey(csv_path = "rule_stats.csv"): #creates a sankey plot of the hard rules

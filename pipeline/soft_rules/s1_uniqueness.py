@@ -30,6 +30,12 @@ def compute_fingerprint(dataset):
     X = dataset.X.select_dtypes(include="number")
     arr = X.to_numpy(dtype=float, copy=False)
 
+    # constant columns give nan skew/kurtosis and columns with <2 values give a
+    # nan std. summarize() drops those nans, so the four moment blocks would each
+    # describe a different set of columns. drop them once here instead.
+    arr = arr[:, (~np.isnan(arr)).sum(axis=0) >= 2]
+    arr = arr[:, np.nanstd(arr, axis=0) > 0]
+
     means = np.nanmean(arr, axis=0)
     stds = np.nanstd(arr, axis=0, ddof=1)
     skews = scipy_stats.skew(arr, axis=0, nan_policy="omit")

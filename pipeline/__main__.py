@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 import os
 import pickle
+import time
 from collections import Counter
 from itertools import zip_longest
 from pathlib import Path
@@ -20,10 +21,10 @@ from pipeline import stats
 from pipeline import soft_stats
 from pipeline.soft_rules import s3_data_quality as s3
 from pipeline.soft_rules import s1_uniqueness as s1
-from pipeline.soft_rules import s2_iid as s2
+from pipeline.soft_rules import s2_sample_duplication as s2
 from pipeline.soft_rules import s4_leakage as s4
-from pipeline.soft_rules import s5_batch_effects as s5
-from pipeline.soft_rules import s6_class_balance as s6
+from pipeline.soft_rules import s5_class_balance as s5
+from pipeline.soft_rules import s6_batch_effects as s6
 
 
 OUTPUT_DIR = Path(os.environ.get("PIPELINE_DATA", "data")) / "datasets"
@@ -102,7 +103,9 @@ def fetch_and_save(candidates: list) -> list[Path]:
 
         # A6 cross-duplicate check against pool
         if candidate.source not in A6_EXEMPT_SOURCES:
+            start = time.perf_counter()
             a6_result = a6_cross_duplicate.check(ds, a6_pool)
+            a6_result.details["runtime_s"] = time.perf_counter() - start  # A6 runs here, not in the runner
             record_stats(candidate, data_results + [a6_result])
             if not a6_result.passed:
                 log.info("  A6 rejected %s: %s", ds.id, a6_result.reason)
@@ -191,6 +194,12 @@ def main() -> None:
     rule_csv = str(RESULTS_DIR / "rule_stats.csv")
     stats.save_csv(rule_csv)
     stats.build_sankey(rule_csv).write_html(str(RESULTS_DIR / "rule_stats_sankey.html"))
+    stats.build_runtime_chart(rule_csv)
+    timings_csv = str(RESULTS_DIR / "loader_timings.csv")
+    registry.save_timings_csv(timings_csv)
+    registry.build_runtime_chart(timings_csv)
+    log.info("Hard-rule runtime (mean s per dataset): %s", stats.runtime_summary(rule_csv))
+    log.info("Loader runtime (mean s per call): %s", registry.runtime_summary())
     log.info("%d datasets saved to %s. Saved rule_stats.csv.", len(saved_dirs), OUTPUT_DIR)
     if not saved_dirs:
         log.info("No datasets saved, skipping soft rules.")

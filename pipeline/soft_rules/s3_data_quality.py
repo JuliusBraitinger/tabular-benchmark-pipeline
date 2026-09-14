@@ -2,7 +2,7 @@
 # missing fraction, constant features, outlier percentage
 #
 # Composite score over  sub-metrics; each sub-metric is in [0, 1] (1 = clean).
-# Budach et al. (2022), Eq. for Completeness:
+# Mohammed et al. (2025), Eq. for Completeness:
 #        c_miss = 1 - (1/p) * sum_j ( missing(c_j) / n )
 
 import numpy as np
@@ -34,15 +34,13 @@ def top_variable_columns(X, k=MAX_FEATURES_FOR_HEAVY_OPS):
 
     return X.iloc[:, top_k_indices]
 
-# Sub-metric weights for the final S3 score.
-#  JUST A EDUCATED GUESS NEEDS IMPROVEMENT
-# c_uniq (duplicate detection) moved to S2 — it's an IID signal, not a quality one.
-# the freed 0.15 was redistributed across the four remaining sub-metrics.
+# Sub-metric weights: educated guess, but the ordering is backed by Table 3 in
+# Mohammed et al. (2025)
 SUB_WEIGHTS = {
-    "c_miss":    0.35,  # completeness
-    "c_consist": 0.25,  # consistent representation
-    "c_out":     0.25,  # outliers
-    "c_const":   0.15,  # constant features
+    "c_miss":    0.35,  # completeness       - high impact
+    "c_out":     0.30,  # feature accuracy   - high impact
+    "c_const":   0.25,  # useless features   - TFDV
+    "c_consist": 0.10,  # consistent repr.   - limited impact
 }
 
 def completeness(X): #penalizes dataset with empty columns more than a flat total-cells ratio would
@@ -113,13 +111,15 @@ def outlier_percentage(X):
         "contamination": "auto",
     }
 
-# inspired by Budach et al. (2022), "The Effects of Data Quality on ML Performance
+# inspired by Mohammed et al. (2025), "The Effects of Data Quality on ML Performance
 # on Tabular Data", arXiv:2207.14529, "Consistent Representation" dimension (Eq. 1).
 # the paper measures minimal replacement operations to make a column consistent
 # (e.g. "USA"/"U.S.A."/"United States" -> one canonical form). we use a much
 # cheaper proxy: flag object columns where pd.to_numeric introduces new NaNs,
 # i.e. columns that mix numeric and string values.
 def consistency(X):
+    # Eq. 1 divides by ALL features: numeric ones count as consistent (InCons=0),
+    # so an all-numeric matrix scores 1.0 by definition, not by accident.
     n_features = X.shape[1]
     n_mixed = 0 #columns with >1 unique type (e.g. int and string)
     for col in X.select_dtypes(include="object").columns:
@@ -138,21 +138,20 @@ def score(dataset):
     c_const, const_details = non_constant(X)
     c_consist, consist_details = consistency(X)
     c_out, out_details = outlier_percentage(X)
-    final_score = (
-        SUB_WEIGHTS["c_miss"]    * c_miss
-        + SUB_WEIGHTS["c_consist"] * c_consist
-        + SUB_WEIGHTS["c_out"]     * c_out
-        + SUB_WEIGHTS["c_const"]   * c_const
-    )
+
+    # a sub-metric that did not apply comes back as nan. renormalise over the ones
+    # that ran so it is excluded rather than dragging the aggregate down.
+    subs = {"c_miss": c_miss, "c_const": c_const, "c_consist": c_consist, "c_out": c_out}
+    present = {k: v for k, v in subs.items() if not pd.isna(v)}
+    total_weight = sum(SUB_WEIGHTS[k] for k in present)
+    final_score = (sum(SUB_WEIGHTS[k] * v for k, v in present.items()) / total_weight
+                   if total_weight else float("nan"))
 
     return SoftRuleResult(
         rule="S3",
         score=final_score,
         details={
-            "c_miss": c_miss,
-            "c_const": c_const,
-            "c_consist": c_consist,
-            "c_out": c_out,
+            **subs,
             **miss_details,
             **const_details,
             **consist_details,

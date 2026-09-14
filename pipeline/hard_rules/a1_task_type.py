@@ -29,15 +29,17 @@ def check_data(
 ) -> RuleResult | None:
     # Infer task type from the target variable when metadata said 'unknown'.
     # The inferred task is carried in details['inferred_task'] so callers can use it downstream.
-    if normalise(task_type) != "unknown":
-        return None  # already resolved at metadata phase -> skip check
-
     if y is None or y.empty:
         return RuleResult(rule="A1", passed=False, reason="no target variable")
 
+    # before the early return below: a constant target is invalid whatever the loader
+    # declared, and loaders that said "classification" used to skip this check
     n_unique = y.nunique()
     if n_unique <= 1:
         return RuleResult(rule="A1", passed=False, reason=f"target has only {n_unique} unique values")
+
+    if normalise(task_type) != "unknown":
+        return None  # already resolved at metadata phase -> skip check
 
     # Discrete target with few classes -> classification, else regression.
     inferred = "classification" if n_unique <= 50 else "regression"
